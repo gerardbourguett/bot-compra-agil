@@ -224,7 +224,6 @@ def ejecutar_scraper(dias_atras=30, max_paginas=None):
         
         page_number += 1
         time.sleep(0.5)  # Pequeña pausa entre peticiones para no sobrecargar el servidor
-```python
         
         if not data or data.get('success') != 'OK':
             print("❌ Error en la respuesta de la API")

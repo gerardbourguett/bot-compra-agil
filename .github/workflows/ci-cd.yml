@@ -64,7 +64,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            # 1. Login en el registro de GitHub desde el VPS
+            # 1. Login en el registro de GitHub
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # 2. Bajar las imágenes nuevas
@@ -75,24 +75,32 @@ jobs:
             mkdir -p app
             cd app
 
-            # 4. Actualizar código (docker-compose.yml)
-            # Nota: Si el repo es privado, el VPS necesita su propia llave SSH configurada en GitHub
-            # Si falla el git pull, es por permisos.
+            # 4. Actualizar código usando TOKEN para evitar pedir contraseña
+            # Construimos la URL con el token incluido
+            REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+
             if [ -d ".git" ]; then
+              # Actualizar URL del remoto para usar el token
+              git remote set-url origin "$REPO_URL"
               git pull origin main
             else
-              # Si falla el clone por permisos, asegúrate de tener docker-compose.yml aquí manualmente
-              git clone https://github.com/${{ github.repository }}.git . || echo "⚠️ No se pudo clonar, asegúrate de que docker-compose.yml exista"
+              # Clonar usando el token
+              git clone "$REPO_URL" .
             fi
 
-            # 5. CREAR ARCHIVO .ENV (¡Importante!)
+            # 5. CREAR ARCHIVO .ENV
             echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" > .env
             echo "TELEGRAM_TOKEN=${{ secrets.TELEGRAM_TOKEN }}" >> .env
             echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
 
-            # 6. Reiniciar servicios
-            docker compose down
-            docker compose up -d
+            # 6. Reiniciar servicios (probando docker-compose y docker compose)
+            if command -v docker-compose &> /dev/null; then
+                docker-compose down || true
+                docker-compose up -d
+            else
+                docker compose down || true
+                docker compose up -d
+            fi
 
-            # 7. Limpiar imágenes viejas para no llenar el disco
+            # 7. Limpiar
             docker image prune -f
