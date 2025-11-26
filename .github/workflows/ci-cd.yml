@@ -36,7 +36,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          target: bot   # ⚠️ Asegúrate de que tu Dockerfile tenga "FROM ... AS bot"
+          target: bot # ⚠️ Asegúrate de que tu Dockerfile tenga "FROM ... AS bot"
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/bot:latest
           cache-from: type=gha
@@ -47,7 +47,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          target: scraper  # ⚠️ Asegúrate de que tu Dockerfile tenga "FROM ... AS scraper"
+          target: scraper # ⚠️ Asegúrate de que tu Dockerfile tenga "FROM ... AS scraper"
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/scraper:latest
           cache-from: type=gha
@@ -66,15 +66,15 @@ jobs:
           script: |
             # 1. Login en el registro de GitHub desde el VPS
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            
+
             # 2. Bajar las imágenes nuevas
             docker pull ghcr.io/${{ github.repository }}/bot:latest
             docker pull ghcr.io/${{ github.repository }}/scraper:latest
-            
+
             # 3. Preparar directorio
             mkdir -p app
             cd app
-            
+
             # 4. Actualizar código (docker-compose.yml)
             # Nota: Si el repo es privado, el VPS necesita su propia llave SSH configurada en GitHub
             # Si falla el git pull, es por permisos.
@@ -89,10 +89,10 @@ jobs:
             echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" > .env
             echo "TELEGRAM_TOKEN=${{ secrets.TELEGRAM_TOKEN }}" >> .env
             echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
-            
+
             # 6. Reiniciar servicios
             docker compose down
             docker compose up -d
-            
+
             # 7. Limpiar imágenes viejas para no llenar el disco
             docker image prune -f
