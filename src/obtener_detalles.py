@@ -9,13 +9,16 @@ import time
 def obtener_detalles(max_licitaciones=None, pausa_entre_requests=0.5):
     """
     Obtiene los detalles completos de licitaciones que aún no los tienen.
-    
+
     Args:
         max_licitaciones: Número máximo de licitaciones a procesar (None = todas)
         pausa_entre_requests: Segundos de pausa entre cada licitación
     """
     print("\n🔍 Iniciando obtención de detalles...")
-    
+
+    # Asegurar que la base de datos esté inicializada
+    db.iniciar_db_extendida()
+
     # Obtener licitaciones sin detalle
     limite = max_licitaciones if max_licitaciones else 10000
     codigos = db.obtener_licitaciones_sin_detalle(limite)

@@ -1,5 +1,6 @@
 # Archivos de Python
 .venv
+venv
 
 # Archivos de base de datos
 *.db

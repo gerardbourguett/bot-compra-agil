@@ -378,7 +378,7 @@ async def analizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("⭐ Guardar", callback_data=f"guardar_{codigo}")
         ],
         [
-            InlineKeyboardButton("🌐 Ver en MercadoPublico", url=f"https://www.mercadopublico.cl/PurchaseOrders/Details.aspx?BidCode={codigo}")
+            InlineKeyboardButton("🌐 Ver en Compra Ágil", url=f"https://buscador.mercadopublico.cl/ficha?code={codigo}")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -526,7 +526,7 @@ async def detalle_licitacion(update: Update, context: ContextTypes.DEFAULT_TYPE)
             InlineKeyboardButton("⭐ Guardar", callback_data=f"guardar_{codigo}")
         ],
         [
-            InlineKeyboardButton("🌐 Ver en MercadoPublico", url=f"https://www.mercadopublico.cl/PurchaseOrders/Details.aspx?BidCode={codigo}")
+            InlineKeyboardButton("🌐 Ver en Compra Ágil", url=f"https://buscador.mercadopublico.cl/ficha?code={codigo}")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
