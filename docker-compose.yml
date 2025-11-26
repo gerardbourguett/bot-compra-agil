@@ -23,7 +23,10 @@ services:
 
   # Scraper (ejecuta cada 6 horas)
   scraper:
-    build: .
+    image: ghcr.io/${IMAGE_REPO:-gerardbourguett/bot-compra-agil}/scraper:latest
+    build:
+      context: .
+      target: scraper
     container_name: compra_agil_scraper
     restart: unless-stopped
     depends_on:
@@ -58,7 +61,10 @@ services:
 
   # Bot de Telegram
   bot:
-    build: .
+    image: ghcr.io/${IMAGE_REPO:-gerardbourguett/bot-compra-agil}/bot:latest
+    build:
+      context: .
+      target: bot
     container_name: compra_agil_bot
     restart: unless-stopped
     depends_on:
