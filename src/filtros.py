@@ -12,28 +12,31 @@ DB_NAME = 'compra_agil.db'
 def buscar_por_palabras_clave(palabras_clave, limite=20):
     """
     Busca licitaciones que coincidan con palabras clave específicas.
-    
-    Args:
-        palabras_clave: String con palabras separadas por comas o lista
-        limite: Número máximo de resultados
-    
-    Returns:
-        Lista de licitaciones que coinciden
     """
     if isinstance(palabras_clave, str):
         palabras = [p.strip().lower() for p in palabras_clave.split(',')]
     else:
         palabras = [p.lower() for p in palabras_clave]
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_ext.get_connection()
     cursor = conn.cursor()
+    
+    # Definir placeholder según DB
+    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
+    like_op = 'ILIKE' if db_ext.USE_POSTGRES else 'LIKE' # Postgres es case-sensitive con LIKE, usar ILIKE
     
     # Construir query con OR para cada palabra
     condiciones = []
     parametros = []
     
     for palabra in palabras:
-        condiciones.append("(LOWER(nombre) LIKE ? OR LOWER(organismo) LIKE ?)")
+        if db_ext.USE_POSTGRES:
+            # Para Postgres usamos ILIKE para case-insensitive
+            condiciones.append(f"(nombre {like_op} {placeholder} OR organismo {like_op} {placeholder})")
+        else:
+            # Para SQLite usamos LOWER()
+            condiciones.append(f"(LOWER(nombre) LIKE {placeholder} OR LOWER(organismo) LIKE {placeholder})")
+            
         parametros.extend([f"%{palabra}%", f"%{palabra}%"])
     
     query = f'''
@@ -43,7 +46,7 @@ def buscar_por_palabras_clave(palabras_clave, limite=20):
         WHERE ({" OR ".join(condiciones)})
         AND id_estado = 2
         ORDER BY fecha_cierre ASC
-        LIMIT ?
+        LIMIT {placeholder}
     '''
     
     parametros.append(limite)
@@ -60,10 +63,6 @@ def buscar_por_palabras_clave(palabras_clave, limite=20):
 def buscar_por_tipo_producto(tipo, limite=20):
     """
     Busca licitaciones por tipo de producto/servicio.
-    
-    Args:
-        tipo: 'productos' o 'servicios' o palabras específicas
-        limite: Número máximo de resultados
     """
     # Palabras clave asociadas a productos
     palabras_productos = ['compra', 'adquisición', 'suministro', 'equipamiento', 
@@ -87,26 +86,32 @@ def buscar_por_tipo_producto(tipo, limite=20):
 def buscar_urgentes(dias=3, limite=20):
     """
     Busca licitaciones que cierran pronto.
-    
-    Args:
-        dias: Número de días hacia adelante
-        limite: Número máximo de resultados
     """
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_ext.get_connection()
     cursor = conn.cursor()
+    
+    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
     
     fecha_limite = (datetime.now() + timedelta(days=dias)).strftime("%Y-%m-%d")
     
-    cursor.execute('''
+    # Ajustar consulta de fecha para Postgres/SQLite
+    if db_ext.USE_POSTGRES:
+        fecha_actual_query = "CURRENT_DATE"
+    else:
+        fecha_actual_query = "datetime('now')"
+
+    query = f'''
         SELECT id, codigo, nombre, fecha_publicacion, fecha_cierre, organismo,
                unidad, estado, monto_disponible, moneda, cantidad_proveedores_cotizando
         FROM licitaciones
         WHERE id_estado = 2
-        AND fecha_cierre <= ?
-        AND fecha_cierre >= datetime('now')
+        AND fecha_cierre <= {placeholder}
+        AND fecha_cierre >= {fecha_actual_query}
         ORDER BY fecha_cierre ASC
-        LIMIT ?
-    ''', (fecha_limite, limite))
+        LIMIT {placeholder}
+    '''
+    
+    cursor.execute(query, (fecha_limite, limite))
     
     resultados = cursor.fetchall()
     conn.close()
@@ -119,24 +124,21 @@ def buscar_urgentes(dias=3, limite=20):
 def buscar_por_monto(monto_min=None, monto_max=None, limite=20):
     """
     Busca licitaciones por rango de monto.
-    
-    Args:
-        monto_min: Monto mínimo en CLP
-        monto_max: Monto máximo en CLP
-        limite: Número máximo de resultados
     """
-    conn = sqlite3.connect(DB_NAME)
+    conn = db_ext.get_connection()
     cursor = conn.cursor()
+    
+    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
     
     condiciones = ["id_estado = 2"]
     parametros = []
     
     if monto_min is not None:
-        condiciones.append("monto_disponible >= ?")
+        condiciones.append(f"monto_disponible >= {placeholder}")
         parametros.append(monto_min)
     
     if monto_max is not None:
-        condiciones.append("monto_disponible <= ?")
+        condiciones.append(f"monto_disponible <= {placeholder}")
         parametros.append(monto_max)
     
     query = f'''
@@ -145,7 +147,7 @@ def buscar_por_monto(monto_min=None, monto_max=None, limite=20):
         FROM licitaciones
         WHERE {" AND ".join(condiciones)}
         ORDER BY monto_disponible ASC
-        LIMIT ?
+        LIMIT {placeholder}
     '''
     
     parametros.append(limite)

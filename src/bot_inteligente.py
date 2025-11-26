@@ -36,7 +36,8 @@ from bot_inteligente_parte1 import (
     PESO_PALABRAS, PESO_COMPETENCIA, PESO_MONTO
 )
 from bot_inteligente_parte2 import (
-    buscar, oportunidades, urgentes, por_monto, analizar
+    buscar, oportunidades, urgentes, por_monto, analizar,
+    mostrar_pagina, exportar_excel, detalle_licitacion
 )
 from bot_inteligente_parte3 import (
     guardar_licitacion, mis_guardadas, eliminar_guardada,
@@ -124,6 +125,7 @@ def main():
     
     # Comandos de análisis con IA
     application.add_handler(CommandHandler('analizar', analizar))
+    application.add_handler(CommandHandler('detalle', detalle_licitacion))
     application.add_handler(CommandHandler('recomendar', recomendar))
     application.add_handler(CommandHandler('ayuda_cotizar', ayuda_cotizar))
     
@@ -179,6 +181,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         codigo = data.replace('analizar_', '')
         context.args = [codigo]
         await analizar(update, context)
+        
+    elif data.startswith('detalle_'):
+        codigo = data.replace('detalle_', '')
+        context.args = [codigo]
+        await detalle_licitacion(update, context)
+        
+    # Paginación y Exportación
+    elif data == 'pag_ant':
+        busqueda = context.user_data.get('busqueda_actual')
+        if busqueda and busqueda['pagina'] > 0:
+            busqueda['pagina'] -= 1
+            await mostrar_pagina(update, context)
+            
+    elif data == 'pag_sig':
+        busqueda = context.user_data.get('busqueda_actual')
+        if busqueda:
+            total_paginas = (busqueda['total'] + 5 - 1) // 5
+            if busqueda['pagina'] < total_paginas - 1:
+                busqueda['pagina'] += 1
+                await mostrar_pagina(update, context)
+                
+    elif data == 'exportar_excel':
+        await exportar_excel(update, context)
 
 
 if __name__ == '__main__':

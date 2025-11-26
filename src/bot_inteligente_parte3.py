@@ -1,7 +1,7 @@
 """
 Bot Inteligente - Parte 3: Guardadas, Ayuda para Cotizar y Alertas
 """
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import database_bot as db_bot
 import database_extended as db
@@ -226,21 +226,30 @@ async def recomendar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    mensaje = f"🎯 <b>Top 5 Recomendaciones para {perfil['nombre_empresa']}</b>\n\n"
+    mensaje_inicial = f"🎯 <b>Top 5 Recomendaciones para {perfil['nombre_empresa']}</b>"
+    await update.message.reply_text(mensaje_inicial, parse_mode='HTML')
     
     for i, lic in enumerate(licitaciones, 1):
         score = filtros.calcular_score_compatibilidad_simple(lic, perfil)
         emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "🏅"
         
-        mensaje += f"{emoji} <b>#{i} - Score: {score}/100</b>\n"
-        mensaje += f"📄 {lic['nombre'][:60]}...\n"
-        mensaje += f"🏢 {lic['organismo']}\n"
-        mensaje += f"💰 ${lic['monto_disponible']:,} {lic['moneda']}\n"
-        mensaje += f"📅 Cierre: {lic['fecha_cierre']}\n"
-        mensaje += f"👥 Competencia: {lic['cantidad_proveedores_cotizando']} proveedores\n"
-        mensaje += f"🔗 /analizar {lic['codigo']}\n\n"
+        texto = f"{emoji} <b>#{i} - Score: {score}/100</b>\n"
+        texto += f"📄 {lic['nombre'][:60]}...\n"
+        texto += f"🏢 {lic['organismo']}\n"
+        texto += f"💰 ${lic['monto_disponible']:,} {lic['moneda']}\n"
+        texto += f"📅 Cierre: {lic['fecha_cierre']}\n"
+        texto += f"👥 Competencia: {lic['cantidad_proveedores_cotizando']} proveedores"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("Analizar 🤖", callback_data=f"analizar_{lic['codigo']}"),
+                InlineKeyboardButton("📋 Detalle", callback_data=f"detalle_{lic['codigo']}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(texto, reply_markup=reply_markup, parse_mode='HTML')
     
-    await update.message.reply_text(mensaje, parse_mode='HTML')
     db_bot.registrar_interaccion(user_id, 'recomendar')
 
 
