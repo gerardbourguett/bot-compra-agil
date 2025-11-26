@@ -49,30 +49,10 @@ def iniciar_db_bot():
             experiencia_anos INTEGER,
             certificaciones TEXT,
             alertas_activas INTEGER DEFAULT 1,
-            monto_minimo_interes INTEGER DEFAULT 500000,
-            monto_maximo_capacidad INTEGER DEFAULT 5000000,
-            peso_palabras INTEGER DEFAULT 2,
-            peso_competencia INTEGER DEFAULT 2,
-            peso_monto INTEGER DEFAULT 2,
             fecha_creacion TEXT,
             fecha_actualizacion TEXT
         )
     ''')
-    
-    # Migración: Agregar columnas si no existen
-    columnas_nuevas = [
-        ("monto_minimo_interes", "INTEGER DEFAULT 500000"),
-        ("monto_maximo_capacidad", "INTEGER DEFAULT 5000000"),
-        ("peso_palabras", "INTEGER DEFAULT 2"),
-        ("peso_competencia", "INTEGER DEFAULT 2"),
-        ("peso_monto", "INTEGER DEFAULT 2")
-    ]
-    
-    for col, tipo in columnas_nuevas:
-        try:
-            cursor.execute(f"ALTER TABLE perfiles_empresas ADD COLUMN {col} {tipo}")
-        except Exception:
-            pass  # Columna ya existe
     
     # Tabla de licitaciones guardadas
     cursor.execute(f'''
@@ -141,12 +121,9 @@ def guardar_perfil(user_id, perfil_data):
                 INSERT INTO perfiles_empresas 
                 (telegram_user_id, nombre_empresa, tipo_negocio, productos_servicios, 
                  palabras_clave, capacidad_entrega_dias, ubicacion, experiencia_anos, 
-                 certificaciones, alertas_activas, monto_minimo_interes, monto_maximo_capacidad,
-                 peso_palabras, peso_competencia, peso_monto,
-                 fecha_creacion, fecha_actualizacion)
+                 certificaciones, alertas_activas, fecha_creacion, fecha_actualizacion)
                 VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
                         {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
-                        {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
                         {placeholder}, {placeholder})
                 ON CONFLICT (telegram_user_id) DO UPDATE SET
                     nombre_empresa = EXCLUDED.nombre_empresa,
@@ -158,11 +135,6 @@ def guardar_perfil(user_id, perfil_data):
                     experiencia_anos = EXCLUDED.experiencia_anos,
                     certificaciones = EXCLUDED.certificaciones,
                     alertas_activas = EXCLUDED.alertas_activas,
-                    monto_minimo_interes = EXCLUDED.monto_minimo_interes,
-                    monto_maximo_capacidad = EXCLUDED.monto_maximo_capacidad,
-                    peso_palabras = EXCLUDED.peso_palabras,
-                    peso_competencia = EXCLUDED.peso_competencia,
-                    peso_monto = EXCLUDED.peso_monto,
                     fecha_actualizacion = EXCLUDED.fecha_actualizacion
             ''', (
                 user_id,
@@ -175,11 +147,6 @@ def guardar_perfil(user_id, perfil_data):
                 perfil_data.get('experiencia_anos'),
                 perfil_data.get('certificaciones'),
                 perfil_data.get('alertas_activas', 1),
-                perfil_data.get('monto_minimo_interes', 500000),
-                perfil_data.get('monto_maximo_capacidad', 5000000),
-                perfil_data.get('peso_palabras', 2),
-                perfil_data.get('peso_competencia', 2),
-                perfil_data.get('peso_monto', 2),
                 ahora,
                 ahora
             ))
@@ -188,12 +155,9 @@ def guardar_perfil(user_id, perfil_data):
                 INSERT OR REPLACE INTO perfiles_empresas 
                 (telegram_user_id, nombre_empresa, tipo_negocio, productos_servicios, 
                  palabras_clave, capacidad_entrega_dias, ubicacion, experiencia_anos, 
-                 certificaciones, alertas_activas, monto_minimo_interes, monto_maximo_capacidad,
-                 peso_palabras, peso_competencia, peso_monto,
-                 fecha_creacion, fecha_actualizacion)
+                 certificaciones, alertas_activas, fecha_creacion, fecha_actualizacion)
                 VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
                         {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
-                        {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
                         COALESCE((SELECT fecha_creacion FROM perfiles_empresas WHERE telegram_user_id = {placeholder}), {placeholder}), 
                         {placeholder})
             ''', (
@@ -207,11 +171,6 @@ def guardar_perfil(user_id, perfil_data):
                 perfil_data.get('experiencia_anos'),
                 perfil_data.get('certificaciones'),
                 perfil_data.get('alertas_activas', 1),
-                perfil_data.get('monto_minimo_interes', 500000),
-                perfil_data.get('monto_maximo_capacidad', 5000000),
-                perfil_data.get('peso_palabras', 2),
-                perfil_data.get('peso_competencia', 2),
-                perfil_data.get('peso_monto', 2),
                 user_id,
                 ahora,
                 ahora
@@ -229,84 +188,31 @@ def guardar_perfil(user_id, perfil_data):
 
 def obtener_perfil(user_id):
     """Obtiene el perfil de una empresa."""
-    return obtener_perfil_explicito(user_id)
-
-def obtener_perfil_explicito(user_id):
     conn = get_connection()
     cursor = conn.cursor()
-    placeholder = '%s' if USE_POSTGRES else '?'
     
-    # Intentar obtener con todas las columnas
-    try:
-        cursor.execute(f'''
-            SELECT telegram_user_id, nombre_empresa, tipo_negocio, productos_servicios,
-                   palabras_clave, capacidad_entrega_dias, ubicacion, experiencia_anos,
-                   certificaciones, alertas_activas, monto_minimo_interes, monto_maximo_capacidad,
-                   peso_palabras, peso_competencia, peso_monto,
-                   fecha_creacion, fecha_actualizacion
-            FROM perfiles_empresas WHERE telegram_user_id = {placeholder}
-        ''', (user_id,))
-        row = cursor.fetchone()
-        
-        if not row:
-            conn.close()
-            return None
-            
-        perfil = {
-            'telegram_user_id': row[0],
-            'nombre_empresa': row[1],
-            'tipo_negocio': row[2],
-            'productos_servicios': row[3],
-            'palabras_clave': row[4],
-            'capacidad_entrega_dias': row[5],
-            'ubicacion': row[6],
-            'experiencia_anos': row[7],
-            'certificaciones': row[8],
-            'alertas_activas': row[9],
-            'monto_minimo_interes': row[10],
-            'monto_maximo_capacidad': row[11],
-            'peso_palabras': row[12],
-            'peso_competencia': row[13],
-            'peso_monto': row[14],
-            'fecha_creacion': row[15],
-            'fecha_actualizacion': row[16]
-        }
-        conn.close()
-        return perfil
-        
-    except Exception:
-        # Fallback para esquema antiguo
-        conn.close()
-        # Re-abrir conexión
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(f'SELECT * FROM perfiles_empresas WHERE telegram_user_id = {placeholder}', (user_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if not row:
-            return None
-            
-        # Devolver lo básico con defaults
-        return {
-            'telegram_user_id': row[0],
-            'nombre_empresa': row[1],
-            'tipo_negocio': row[2],
-            'productos_servicios': row[3],
-            'palabras_clave': row[4],
-            'capacidad_entrega_dias': row[5],
-            'ubicacion': row[6],
-            'experiencia_anos': row[7],
-            'certificaciones': row[8],
-            'alertas_activas': row[9],
-            'monto_minimo_interes': 500000,
-            'monto_maximo_capacidad': 5000000,
-            'peso_palabras': 2,
-            'peso_competencia': 2,
-            'peso_monto': 2,
-            'fecha_creacion': row[10],
-            'fecha_actualizacion': row[11]
-        }
+    placeholder = '%s' if USE_POSTGRES else '?'
+    cursor.execute(f'SELECT * FROM perfiles_empresas WHERE telegram_user_id = {placeholder}', (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    return {
+        'telegram_user_id': row[0],
+        'nombre_empresa': row[1],
+        'tipo_negocio': row[2],
+        'productos_servicios': row[3],
+        'palabras_clave': row[4],
+        'capacidad_entrega_dias': row[5],
+        'ubicacion': row[6],
+        'experiencia_anos': row[7],
+        'certificaciones': row[8],
+        'alertas_activas': row[9],
+        'fecha_creacion': row[10],
+        'fecha_actualizacion': row[11]
+    }
 
 
 # ==================== LICITACIONES GUARDADAS ====================
@@ -319,15 +225,6 @@ def guardar_licitacion(user_id, codigo, notas=None):
     placeholder = '%s' if USE_POSTGRES else '?'
     
     try:
-        # Verificar si ya existe
-        cursor.execute(f'''
-            SELECT 1 FROM licitaciones_guardadas 
-            WHERE telegram_user_id = {placeholder} AND codigo_licitacion = {placeholder}
-        ''', (user_id, codigo))
-        
-        if cursor.fetchone():
-            return False  # Ya existe
-            
         cursor.execute(f'''
             INSERT INTO licitaciones_guardadas 
             (telegram_user_id, codigo_licitacion, fecha_guardado, notas)

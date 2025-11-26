@@ -9,3 +9,8 @@
 
 # Archivos de entorno
 .env
+.env.docker
+
+# Cache
+__pycache__
+src/__pycache__

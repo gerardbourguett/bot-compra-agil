@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: compra_agil_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: compra_agil
+      POSTGRES_USER: compra_agil_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"  # Puerto 5433 en host para evitar conflictos
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compra_agil_user -d compra_agil"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Scraper (ejecuta cada 6 horas)
+  scraper:
+    build: .
+    container_name: compra_agil_scraper
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://compra_agil_user:${POSTGRES_PASSWORD:-changeme123}@postgres:5432/compra_agil
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - ./logs:/app/logs
+    command: >
+      sh -c "
+        echo '⏰ Scraper iniciado - Ejecutará cada 6 horas'
+        while true; do
+          echo ''
+          echo '========================================='
+          echo '🕷️  INICIANDO SCRAPER'
+          echo '📅 Fecha: $$(date)'
+          echo '========================================='
+          python scraper.py
+          echo ''
+          echo '📝 Obteniendo detalles de licitaciones...'
+          python obtener_detalles.py
+          echo ''
+          echo '========================================='
+          echo '✅ Scraper completado'
+          echo '⏰ Próxima ejecución en 6 horas'
+          echo '========================================='
+          sleep 21600
+        done
+      "
+
+  # Bot de Telegram
+  bot:
+    build: .
+    container_name: compra_agil_bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://compra_agil_user:${POSTGRES_PASSWORD:-changeme123}@postgres:5432/compra_agil
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./logs:/app/logs
+    command: python bot_inteligente.py
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: compra_agil_network

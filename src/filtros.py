@@ -1,10 +1,12 @@
 """
 Módulo de filtros y búsquedas inteligentes para licitaciones.
 Incluye filtrado por tipo de producto/servicio y ranking por compatibilidad.
-Compatible con PostgreSQL y SQLite.
 """
+import sqlite3
 from datetime import datetime, timedelta
 import database_extended as db_ext
+
+DB_NAME = 'compra_agil.db'
 
 
 def buscar_por_palabras_clave(palabras_clave, limite=20):
@@ -23,18 +25,15 @@ def buscar_por_palabras_clave(palabras_clave, limite=20):
     else:
         palabras = [p.lower() for p in palabras_clave]
     
-    conn = db_ext.get_connection()
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    # Determinar placeholder según BD
-    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
     
     # Construir query con OR para cada palabra
     condiciones = []
     parametros = []
     
     for palabra in palabras:
-        condiciones.append(f"(LOWER(nombre) LIKE {placeholder} OR LOWER(organismo) LIKE {placeholder})")
+        condiciones.append("(LOWER(nombre) LIKE ? OR LOWER(organismo) LIKE ?)")
         parametros.extend([f"%{palabra}%", f"%{palabra}%"])
     
     query = f'''
@@ -44,7 +43,7 @@ def buscar_por_palabras_clave(palabras_clave, limite=20):
         WHERE ({" OR ".join(condiciones)})
         AND id_estado = 2
         ORDER BY fecha_cierre ASC
-        LIMIT {placeholder}
+        LIMIT ?
     '''
     
     parametros.append(limite)
@@ -93,25 +92,22 @@ def buscar_urgentes(dias=3, limite=20):
         dias: Número de días hacia adelante
         limite: Número máximo de resultados
     """
-    conn = db_ext.get_connection()
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
     fecha_limite = (datetime.now() + timedelta(days=dias)).strftime("%Y-%m-%d")
-    fecha_ahora = datetime.now().strftime("%Y-%m-%d")
     
-    query = f'''
+    cursor.execute('''
         SELECT id, codigo, nombre, fecha_publicacion, fecha_cierre, organismo,
                unidad, estado, monto_disponible, moneda, cantidad_proveedores_cotizando
         FROM licitaciones
         WHERE id_estado = 2
-        AND fecha_cierre <= {placeholder}
-        AND fecha_cierre >= {placeholder}
+        AND fecha_cierre <= ?
+        AND fecha_cierre >= datetime('now')
         ORDER BY fecha_cierre ASC
-        LIMIT {placeholder}
-    '''
+        LIMIT ?
+    ''', (fecha_limite, limite))
     
-    cursor.execute(query, (fecha_limite, fecha_ahora, limite))
     resultados = cursor.fetchall()
     conn.close()
     
@@ -129,19 +125,18 @@ def buscar_por_monto(monto_min=None, monto_max=None, limite=20):
         monto_max: Monto máximo en CLP
         limite: Número máximo de resultados
     """
-    conn = db_ext.get_connection()
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
     condiciones = ["id_estado = 2"]
     parametros = []
     
     if monto_min is not None:
-        condiciones.append(f"monto_disponible >= {placeholder}")
+        condiciones.append("monto_disponible >= ?")
         parametros.append(monto_min)
     
     if monto_max is not None:
-        condiciones.append(f"monto_disponible <= {placeholder}")
+        condiciones.append("monto_disponible <= ?")
         parametros.append(monto_max)
     
     query = f'''
@@ -150,7 +145,7 @@ def buscar_por_monto(monto_min=None, monto_max=None, limite=20):
         FROM licitaciones
         WHERE {" AND ".join(condiciones)}
         ORDER BY monto_disponible ASC
-        LIMIT {placeholder}
+        LIMIT ?
     '''
     
     parametros.append(limite)
@@ -195,52 +190,103 @@ def buscar_compatibles_con_perfil(perfil, limite=10):
     return licitaciones[:limite]
 
 
+import unicodedata
+
+def normalizar_texto(texto):
+    """Elimina acentos y convierte a minúsculas."""
+    if not texto:
+        return ""
+    return ''.join(c for c in unicodedata.normalize('NFD', str(texto))
+                  if unicodedata.category(c) != 'Mn').lower()
+
 def calcular_score_compatibilidad_simple(licitacion, perfil):
     """
-    Calcula un score simple de compatibilidad (0-100) sin IA.
-    Basado en coincidencia de palabras clave.
-    
-    Args:
-        licitacion: Dict con datos de la licitación
-        perfil: Dict con perfil de la empresa
-    
-    Returns:
-        int: Score de 0 a 100
+    Calcula un score simple de compatibilidad (0-100) mejorado.
     """
     score = 0
     
-    # Palabras clave del perfil
+    # 1. Obtener y normalizar palabras clave del perfil
     palabras_perfil = set()
     if perfil.get('palabras_clave'):
-        palabras_perfil.update([p.strip().lower() for p in perfil['palabras_clave'].split(',')])
+        palabras_perfil.update([normalizar_texto(p).strip() for p in perfil['palabras_clave'].split(',')])
     if perfil.get('productos_servicios'):
-        palabras_perfil.update([p.strip().lower() for p in perfil['productos_servicios'].split(',')])
+        palabras_perfil.update([normalizar_texto(p).strip() for p in perfil['productos_servicios'].split(',')])
     
-    # Texto de la licitación
-    texto_licitacion = f"{licitacion.get('nombre', '')} {licitacion.get('organismo', '')}".lower()
+    # Filtrar palabras vacías
+    palabras_perfil = {p for p in palabras_perfil if p and len(p) > 2}
     
-    # Contar coincidencias
-    coincidencias = sum(1 for palabra in palabras_perfil if palabra in texto_licitacion)
+    if not palabras_perfil:
+        return 0
+        
+    # 2. Normalizar texto de la licitación
+    nombre_lic = normalizar_texto(licitacion.get('nombre', ''))
+    organismo_lic = normalizar_texto(licitacion.get('organismo', ''))
+    texto_completo = f"{nombre_lic} {organismo_lic}"
     
-    if palabras_perfil:
-        score = min(100, int((coincidencias / len(palabras_perfil)) * 100))
+    # 3. Calcular coincidencias con peso
+    coincidencias = 0
+    palabras_encontradas = set()
     
-    # Bonus por baja competencia
+    for palabra in palabras_perfil:
+        # Coincidencia exacta de la palabra/frase
+        if palabra in texto_completo:
+            coincidencias += 1
+            palabras_encontradas.add(palabra)
+        else:
+            # Coincidencia parcial (palabra dentro de otra, ej: "silla" en "sillas")
+            # Solo si la palabra clave es simple (no frase)
+            if " " not in palabra:
+                for palabra_lic in texto_completo.split():
+                    if palabra in palabra_lic:
+                        coincidencias += 0.8  # Un poco menos de puntaje
+                        palabras_encontradas.add(palabra)
+                        break
+    
+    # 4. Calcular puntajes parciales
+    
+    # Puntaje Palabras (Base 100)
+    score_palabras = 0
+    if coincidencias > 0:
+        score_palabras = 40 + (min(coincidencias, 4) * 15)  # 1->55, 2->70, 3->85, 4+->100
+    
+    # Puntaje Competencia (Base 100)
+    score_competencia = 0
     competidores = licitacion.get('cantidad_proveedores_cotizando', 0)
     if competidores == 0:
-        score += 10
+        score_competencia = 100
     elif competidores <= 2:
-        score += 5
-    
-    # Bonus por monto en rango del perfil (si está configurado)
+        score_competencia = 80
+    elif competidores <= 5:
+        score_competencia = 50
+    elif competidores <= 10:
+        score_competencia = 20
+        
+    # Puntaje Monto (Base 100)
+    score_monto = 0
     monto = licitacion.get('monto_disponible', 0)
-    monto_min_perfil = perfil.get('monto_minimo_interes', 500000)  # Default $500k
-    monto_max_perfil = perfil.get('monto_maximo_capacidad', 5000000)  # Default $5M
+    monto_min = perfil.get('monto_minimo_interes', 500000)
+    monto_max = perfil.get('monto_maximo_capacidad', 5000000)
     
-    if monto_min_perfil <= monto <= monto_max_perfil:
-        score += 10
+    if monto_min <= monto <= monto_max:
+        score_monto = 100
+    elif monto_min * 0.8 <= monto <= monto_max * 1.2:
+        score_monto = 50
+        
+    # 5. Aplicar Pesos del Perfil
+    # 1=Bajo(0.5), 2=Medio(1.0), 3=Alto(1.5)
+    mapa_pesos = {1: 0.5, 2: 1.0, 3: 1.5}
     
-    return min(100, score)
+    p_palabras = mapa_pesos.get(perfil.get('peso_palabras', 2), 1.0)
+    p_competencia = mapa_pesos.get(perfil.get('peso_competencia', 2), 1.0)
+    p_monto = mapa_pesos.get(perfil.get('peso_monto', 2), 1.0)
+    
+    # Calcular promedio ponderado
+    suma_pesos = p_palabras + p_competencia + p_monto
+    score_final = (score_palabras * p_palabras + 
+                   score_competencia * p_competencia + 
+                   score_monto * p_monto) / suma_pesos
+    
+    return min(100, int(score_final))
 
 
 def obtener_estadisticas_busqueda(palabras_clave):

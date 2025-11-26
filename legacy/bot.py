@@ -1,12 +1,13 @@
 """
 Bot de Telegram mejorado para Compra Ágil
 Incluye comandos para buscar licitaciones y ver detalles completos
+Usa botones inline para mejor experiencia de usuario
 """
 import os
 import logging
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler
 import database_extended as db
 import api_client
 import sqlite3
@@ -50,20 +51,46 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not resultados:
         await update.message.reply_text("No encontré nada reciente con ese nombre. 😔")
     else:
-        respuesta = f"Encontré {len(resultados)} coincidencias:\n\n"
+        await update.message.reply_text(f"✅ Encontré {len(resultados)} coincidencias:")
+        
+        # Enviar cada resultado con su botón
         for row in resultados:
             # row es (codigo, nombre, organismo, fecha_cierre)
-            respuesta += f"📄 <b>{row[1][:80]}</b>\n" \
-                         f"🏢 {row[2]}\n" \
-                         f"🆔 <code>{row[0]}</code>\n" \
-                         f"📅 Cierre: {row[3]}\n" \
-                         f"🔗 /detalle {row[0]}\n\n"
+            codigo = row[0]
+            nombre = row[1][:80]
+            organismo = row[2]
+            fecha_cierre = row[3]
+            
+            # Crear botón para ver detalles
+            keyboard = [[InlineKeyboardButton("🔍 Ver Detalles", callback_data=f"detalle_{codigo}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            mensaje = f"📄 <b>{nombre}</b>\n" \
+                     f"🏢 {organismo}\n" \
+                     f"🆔 <code>{codigo}</code>\n" \
+                     f"📅 Cierre: {fecha_cierre}"
+            
+            await update.message.reply_text(
+                mensaje,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
+
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja los callbacks de los botones inline"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Extraer el código de la licitación del callback_data
+    if query.data.startswith("detalle_"):
+        codigo = query.data.replace("detalle_", "")
         
-        # Telegram tiene límite de 4096 caracteres por mensaje
-        if len(respuesta) > 4000:
-            respuesta = respuesta[:4000] + "\n\n... (resultados truncados)"
+        # Editar el mensaje para mostrar que está cargando
+        await query.edit_message_text(f"🔍 Cargando detalles de {codigo}...")
         
-        await update.message.reply_text(respuesta, parse_mode='HTML')
+        # Buscar y mostrar detalles
+        await mostrar_detalle(query.message, codigo)
 
 
 async def detalle(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -77,7 +104,12 @@ async def detalle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     codigo = context.args[0]
     await update.message.reply_text(f"🔍 Buscando detalles de {codigo}...")
+    
+    await mostrar_detalle(update.message, codigo)
 
+
+async def mostrar_detalle(message, codigo):
+    """Muestra los detalles de una licitación"""
     # Primero buscar en la base de datos
     conn = sqlite3.connect(db.DB_NAME)
     cursor = conn.cursor()
@@ -90,10 +122,10 @@ async def detalle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if detalle_db:
         # Tenemos los detalles en la BD
-        await enviar_detalle_desde_db(update, codigo, cursor)
+        await enviar_detalle_desde_db(message, codigo, cursor)
     else:
         # No está en la BD, obtener de la API
-        await update.message.reply_text("📡 Obteniendo información desde la API...")
+        await message.reply_text("📡 Obteniendo información desde la API...")
         
         ficha = api_client.obtener_ficha_detalle(codigo)
         
@@ -103,9 +135,9 @@ async def detalle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             adjuntos = api_client.obtener_adjuntos(codigo)
             db.guardar_detalle_completo(codigo, ficha, historial, adjuntos)
             
-            await enviar_detalle_desde_ficha(update, ficha, historial, adjuntos)
+            await enviar_detalle_desde_ficha(message, ficha, historial, adjuntos)
         else:
-            await update.message.reply_text(
+            await message.reply_text(
                 f"❌ No se encontró la licitación {codigo}\n"
                 "Verifica que el código sea correcto."
             )
@@ -113,13 +145,13 @@ async def detalle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
 
-async def enviar_detalle_desde_db(update: Update, codigo, cursor):
+async def enviar_detalle_desde_db(message, codigo, cursor):
     """Envía los detalles de una licitación desde la base de datos"""
     cursor.execute('SELECT * FROM licitaciones_detalle WHERE codigo = ?', (codigo,))
     row = cursor.fetchone()
     
     if not row:
-        await update.message.reply_text("❌ No se encontraron detalles")
+        await message.reply_text("❌ No se encontraron detalles")
         return
     
     # Construir mensaje con los detalles
@@ -158,10 +190,10 @@ async def enviar_detalle_desde_db(update: Update, codigo, cursor):
     
     mensaje += f"\n🔗 <a href='https://buscador.mercadopublico.cl/ficha?code={codigo}'>Ver en Mercado Público</a>"
     
-    await update.message.reply_text(mensaje, parse_mode='HTML', disable_web_page_preview=True)
+    await message.reply_text(mensaje, parse_mode='HTML', disable_web_page_preview=True)
 
 
-async def enviar_detalle_desde_ficha(update: Update, ficha, historial, adjuntos):
+async def enviar_detalle_desde_ficha(message, ficha, historial, adjuntos):
     """Envía los detalles de una licitación desde la ficha de la API"""
     codigo = ficha.get('codigo')
     info_inst = ficha.get('informacion_institucion', {})
@@ -204,7 +236,7 @@ async def enviar_detalle_desde_ficha(update: Update, ficha, historial, adjuntos)
     
     mensaje += f"\n🔗 <a href='https://buscador.mercadopublico.cl/ficha?code={codigo}'>Ver en Mercado Público</a>"
     
-    await update.message.reply_text(mensaje, parse_mode='HTML', disable_web_page_preview=True)
+    await message.reply_text(mensaje, parse_mode='HTML', disable_web_page_preview=True)
 
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -255,6 +287,9 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler('buscar', buscar))
     application.add_handler(CommandHandler('detalle', detalle))
     application.add_handler(CommandHandler('stats', stats))
+    
+    # Registrar handler para botones inline
+    application.add_handler(CallbackQueryHandler(button_callback))
     
     print("🤖 Bot escuchando...")
     application.run_polling()
