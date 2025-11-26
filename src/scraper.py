@@ -142,71 +142,7 @@ def ejecutar_scraper(dias_atras=30, max_paginas=None):
             break
         
         page_number += 1
-```python
-from curl_cffi import requests
-import database_extended as db  # Usamos la base de datos extendida
-from datetime import datetime, timedelta
-import time
 
-# Configuración de la API
-API_BASE_URL = "https://api.buscador.mercadopublico.cl/compra-agil"
-API_KEY = "e93089e4-437c-4723-b343-4fa20045e3bc"
-
-
-def obtener_headers():
-    """
-    Construye los headers necesarios para las peticiones a la API.
-    Solo necesitamos la X-API-Key, no se requiere token Bearer.
-    """
-    return {
-        "accept": "application/json, text/plain, */*",
-        "accept-language": "es-ES,es;q=0.9",
-        "origin": "https://buscador.mercadopublico.cl",
-        "referer": "https://buscador.mercadopublico.cl/",
-        "sec-ch-ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-site",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-        "x-api-key": API_KEY
-    }
-
-
-def obtener_licitaciones(date_from, date_to, status=2, page_number=1):
-    """
-    Obtiene las licitaciones de la API para una página específica.
-    
-    Args:
-        date_from: Fecha inicial (formato: YYYY-MM-DD)
-        date_to: Fecha final (formato: YYYY-MM-DD)
-        status: Estado de las licitaciones (2 = Publicada)
-        page_number: Número de página a obtener
-    
-    Returns:
-        dict: Respuesta JSON de la API o None si hay error
-    """
-    params = {
-        "date_from": date_from,
-        "date_to": date_to,
-        "order_by": "recent",
-        "page_number": page_number,
-        "status": status
-    }
-    
-    headers = obtener_headers()
-    
-    try:
-        response = requests.get(API_BASE_URL, params=params, headers=headers, impersonate="chrome120")
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"❌ Error al obtener licitaciones (página {page_number}): {e}")
-        return None
-
-
-def ejecutar_scraper(dias_atras=30, max_paginas=None):
     """
     Ejecuta el scraper completo obteniendo todas las páginas de resultados.
     
