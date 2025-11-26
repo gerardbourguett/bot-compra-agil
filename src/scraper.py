@@ -428,3 +428,4 @@ if __name__ == "__main__":
     # Puedes cambiar el número de días o limitar las páginas para pruebas
     # Ejemplo: ejecutar_scraper(dias_atras=7, max_paginas=5)
     ejecutar_scraper(dias_atras=30)
+```
