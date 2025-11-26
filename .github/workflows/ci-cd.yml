@@ -92,6 +92,7 @@ jobs:
             echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" > .env
             echo "TELEGRAM_TOKEN=${{ secrets.TELEGRAM_TOKEN }}" >> .env
             echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+            echo "IMAGE_REPO=${{ github.repository }}" >> .env
 
             # 6. Reiniciar servicios (probando docker-compose y docker compose)
             if command -v docker-compose &> /dev/null; then
