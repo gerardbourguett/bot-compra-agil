@@ -1,0 +1,11 @@
+# Archivos de Python
+.venv
+
+# Archivos de base de datos
+*.db
+
+# Archivos de logs
+*.log
+
+# Archivos de entorno
+.env
