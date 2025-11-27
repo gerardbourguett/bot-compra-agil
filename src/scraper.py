@@ -143,65 +143,12 @@ def ejecutar_scraper(dias_atras=30, max_paginas=None):
 
         page_number += 1
         time.sleep(0.5)  # Pequeña pausa entre peticiones para no sobrecargar el servidor
-<<<<<<< HEAD
         
-        if not data or data.get('success') != 'OK':
-            print("❌ Error en la respuesta de la API")
-            break
-        
-        payload = data.get('payload', {})
-        items = payload.get('resultados', [])
-        
-        if not items:
-            print("✅ No hay más resultados")
-            break
-        
-        # Mostrar información de progreso
-        if page_number == 1:
-            total_resultados = payload.get('resultCount', 0)
-            total_paginas = payload.get('pageCount', 0)
-            print(f"📊 Total de licitaciones encontradas: {total_resultados}")
-            print(f"📄 Total de páginas: {total_paginas}")
-        
-        print(f"   Procesando {len(items)} licitaciones...")
-        
-        for item in items:
-            datos_tupla = (
-                item.get('id'),
-                item.get('codigo'),
-                item.get('nombre'),
-                item.get('fecha_publicacion'),
-                item.get('fecha_cierre'),
-                item.get('organismo'),
-                item.get('unidad'),
-                item.get('id_estado'),
-                item.get('estado'),
-                item.get('monto_disponible'),
-                item.get('moneda'),
-                item.get('monto_disponible_CLP'),
-                item.get('fecha_cambio'),
-                item.get('valor_cambio_moneda'),
-                item.get('cantidad_proveedores_cotizando'),
-                item.get('estado_convocatoria')
-            )
-            nuevos_total += db.guardar_licitacion_basica(datos_tupla)
-        
-        # Verificar si hay más páginas
-        page_count = payload.get('pageCount', 0)
-        if page_number >= page_count:
-            print(f"✅ Todas las páginas procesadas ({page_count} páginas)")
-            break
-        
-        page_number += 1
-from curl_cffi import requests
-import database_extended as db  # Usamos la base de datos extendida
-from datetime import datetime, timedelta
-import time
-=======
->>>>>>> 872fdaf (devops-2)
-
     print(f"\n✅ Proceso terminado. Se guardaron {nuevos_total} licitaciones nuevas.")
-    print(f"📊 Total de licitaciones procesadas: {(page_number - 1) * 15 + len(items)}")
+    if 'items' in locals():
+        print(f"📊 Total de licitaciones procesadas: {(page_number - 1) * 15 + len(items)}")
+    else:
+        print(f"📊 Total de licitaciones procesadas: 0")
 
 
 if __name__ == "__main__":

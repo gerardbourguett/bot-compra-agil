@@ -92,26 +92,23 @@ def buscar_urgentes(dias=3, limite=20):
     
     placeholder = '%s' if db_ext.USE_POSTGRES else '?'
     
-    fecha_limite = (datetime.now() + timedelta(days=dias)).strftime("%Y-%m-%d")
+    # Calculamos fechas en Python para evitar problemas de zona horaria en BD
+    ahora = datetime.now()
+    fecha_limite = (ahora + timedelta(days=dias)).strftime("%Y-%m-%d 23:59")
+    fecha_actual = ahora.strftime("%Y-%m-%d %H:%M")
     
-    # Ajustar consulta de fecha para Postgres/SQLite
-    if db_ext.USE_POSTGRES:
-        fecha_actual_query = "CURRENT_DATE"
-    else:
-        fecha_actual_query = "datetime('now')"
-
     query = f'''
         SELECT id, codigo, nombre, fecha_publicacion, fecha_cierre, organismo,
                unidad, estado, monto_disponible, moneda, cantidad_proveedores_cotizando
         FROM licitaciones
         WHERE id_estado = 2
         AND fecha_cierre <= {placeholder}
-        AND fecha_cierre >= {fecha_actual_query}
+        AND fecha_cierre >= {placeholder}
         ORDER BY fecha_cierre ASC
         LIMIT {placeholder}
     '''
     
-    cursor.execute(query, (fecha_limite, limite))
+    cursor.execute(query, (fecha_limite, fecha_actual, limite))
     
     resultados = cursor.fetchall()
     conn.close()
@@ -326,12 +323,12 @@ if __name__ == "__main__":
     
     # Buscar urgentes
     urgentes = buscar_urgentes(dias=3, limite=5)
-    print(f"\n✅ Licitaciones urgentes (próximos 3 días): {len(urgentes)}")
+    print(f"\nLicitaciones urgentes (proximos 3 dias): {len(urgentes)}")
     
     # Buscar por monto
     por_monto = buscar_por_monto(monto_min=500000, monto_max=2000000, limite=5)
-    print(f"✅ Licitaciones entre $500k y $2M: {len(por_monto)}")
+    print(f"Licitaciones entre $500k y $2M: {len(por_monto)}")
     
     # Buscar servicios
     servicios = buscar_por_tipo_producto('servicios', limite=5)
-    print(f"✅ Licitaciones de servicios: {len(servicios)}")
+    print(f"Licitaciones de servicios: {len(servicios)}")
