@@ -13,11 +13,11 @@ USE_POSTGRES = DATABASE_URL.startswith('postgresql')
 if USE_POSTGRES:
     import psycopg2
     from psycopg2.extras import RealDictCursor
-    print("📊 Usando PostgreSQL")
+    print("Usando PostgreSQL")
 else:
     import sqlite3
     DB_NAME = 'compra_agil.db'
-    print("📊 Usando SQLite")
+    print("Usando SQLite")
 
 
 def get_connection():
@@ -157,19 +157,30 @@ def guardar_licitacion_basica(datos):
     
     try:
         if USE_POSTGRES:
-            # PostgreSQL usa ON CONFLICT
+            # PostgreSQL usa ON CONFLICT DO UPDATE
             cursor.execute('''
                 INSERT INTO licitaciones 
                 (id, codigo, nombre, fecha_publicacion, fecha_cierre, organismo, unidad, 
                  id_estado, estado, monto_disponible, moneda, monto_disponible_CLP, 
                  fecha_cambio, valor_cambio_moneda, cantidad_proveedores_cotizando, estado_convocatoria)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (codigo) DO NOTHING
+                ON CONFLICT (codigo) DO UPDATE SET
+                    nombre = EXCLUDED.nombre,
+                    fecha_cierre = EXCLUDED.fecha_cierre,
+                    id_estado = EXCLUDED.id_estado,
+                    estado = EXCLUDED.estado,
+                    monto_disponible = EXCLUDED.monto_disponible,
+                    moneda = EXCLUDED.moneda,
+                    monto_disponible_CLP = EXCLUDED.monto_disponible_CLP,
+                    fecha_cambio = EXCLUDED.fecha_cambio,
+                    valor_cambio_moneda = EXCLUDED.valor_cambio_moneda,
+                    cantidad_proveedores_cotizando = EXCLUDED.cantidad_proveedores_cotizando,
+                    estado_convocatoria = EXCLUDED.estado_convocatoria
             ''', datos)
         else:
-            # SQLite usa INSERT OR IGNORE
+            # SQLite usa INSERT OR REPLACE
             cursor.execute('''
-                INSERT OR IGNORE INTO licitaciones 
+                INSERT OR REPLACE INTO licitaciones 
                 (id, codigo, nombre, fecha_publicacion, fecha_cierre, organismo, unidad, 
                  id_estado, estado, monto_disponible, moneda, monto_disponible_CLP, 
                  fecha_cambio, valor_cambio_moneda, cantidad_proveedores_cotizando, estado_convocatoria)

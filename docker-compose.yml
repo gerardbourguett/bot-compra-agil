@@ -39,12 +39,13 @@ services:
       - ./logs:/app/logs
     command: >
       sh -c "
-        echo '⏰ Scraper iniciado - Ejecutará cada 6 horas'
+        echo '⏰ Scraper iniciado - Ejecutará cada 4 horas'
         while true; do
           echo ''
           echo '========================================='
           echo '🕷️  INICIANDO SCRAPER'
           echo '📅 Fecha: $$(date)'
+          echo $$(date) > /app/logs/ultima_ejecucion.txt
           echo '========================================='
           python scraper.py
           echo ''
@@ -53,9 +54,9 @@ services:
           echo ''
           echo '========================================='
           echo '✅ Scraper completado'
-          echo '⏰ Próxima ejecución en 6 horas'
+          echo '⏰ Próxima ejecución en 4 horas'
           echo '========================================='
-          sleep 21600
+          sleep 14400
         done
       "
 
