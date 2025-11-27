@@ -1,7 +1,7 @@
-from curl_cffi import requests
-import database_extended as db  # Usamos la base de datos extendida
-from datetime import datetime, timedelta
 import time
+from datetime import datetime, timedelta
+from curl_cffi import requests
+import database_extended as db
 
 # Configuración de la API
 API_BASE_URL = "https://api.buscador.mercadopublico.cl/compra-agil"
@@ -24,7 +24,11 @@ def obtener_headers():
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-site",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "user-agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/142.0.0.0 Safari/537.36"
+        ),
         "x-api-key": API_KEY
     }
 
@@ -47,17 +51,25 @@ def obtener_licitaciones(date_from, date_to, status=2, page_number=1):
         "date_to": date_to,
         "order_by": "recent",
         "page_number": page_number,
-        "status": status
+        "page_number": page_number
     }
+    
+    if status is not None:
+        params["status"] = status
 
     headers = obtener_headers()
 
     try:
-        response = requests.get(API_BASE_URL, params=params, headers=headers, impersonate="chrome120")
+        response = requests.get(
+            API_BASE_URL,
+            params=params,
+            headers=headers,
+            impersonate="chrome120"
+        )
         response.raise_for_status()
         return response.json()
-    except Exception as e:
-        print(f"❌ Error al obtener licitaciones (página {page_number}): {e}")
+    except Exception as error:
+        print(f"❌ Error al obtener licitaciones (página {page_number}): {error}")
         return None
 
 
@@ -92,7 +104,8 @@ def ejecutar_scraper(dias_atras=30, max_paginas=None):
 
         print(f"\n📄 Procesando página {page_number}...")
 
-        data = obtener_licitaciones(date_from, date_to, status=2, page_number=page_number)
+        # Pasamos status=None para obtener todos los estados
+        data = obtener_licitaciones(date_from, date_to, status=None, page_number=page_number)
 
         if not data or data.get('success') != 'OK':
             print("❌ Error en la respuesta de la API")
@@ -143,12 +156,21 @@ def ejecutar_scraper(dias_atras=30, max_paginas=None):
 
         page_number += 1
         time.sleep(0.5)  # Pequeña pausa entre peticiones para no sobrecargar el servidor
-        
+
     print(f"\n✅ Proceso terminado. Se guardaron {nuevos_total} licitaciones nuevas.")
+    
+    # Registrar timestamp de ejecución
+    try:
+        import database_bot as db_bot
+        db_bot.update_system_status('last_scrape_list', datetime.now().isoformat())
+        print("🕒 Timestamp actualizado en system_status")
+    except Exception as e:
+        print(f"⚠️ No se pudo actualizar timestamp: {e}")
+
     if 'items' in locals():
         print(f"📊 Total de licitaciones procesadas: {(page_number - 1) * 15 + len(items)}")
     else:
-        print(f"📊 Total de licitaciones procesadas: 0")
+        print("📊 Total de licitaciones procesadas: 0")
 
 
 if __name__ == "__main__":

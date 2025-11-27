@@ -1,0 +1,39 @@
+[MASTER]
+ignore=CVS
+ignore-patterns=
+persistent=yes
+load-plugins=
+jobs=1
+suggestion-mode=yes
+unsafe-load-any-extension=no
+
+[MESSAGES CONTROL]
+# Disable the message, report, category or checker with the given id(s).
+# R0801: Similar lines in 2 files (Duplicate code) - Disabled because we have split files intentionally
+# C0114: Missing module docstring
+# C0115: Missing class docstring
+# C0116: Missing function docstring
+disable=R0801,C0114,C0115,C0116,C0303,W0718,W0611,W1309
+
+[REPORTS]
+output-format=text
+files-output=no
+reports=yes
+score=yes
+
+[FORMAT]
+# Maximum number of characters on a single line.
+max-line-length=120
+# Allow the body of a module to be on the same line as the name if there is no initializer.
+single-line-module-stmt=no
+
+[BASIC]
+# Good variable names which should always be accepted, separated by a comma.
+good-names=i,j,k,ex,Run,_,db,id,df
+
+[SIMILARITIES]
+# Minimum lines number of a similarity.
+min-similarity-lines=10
+ignore-comments=yes
+ignore-docstrings=yes
+ignore-imports=yes

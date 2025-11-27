@@ -314,25 +314,174 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute('SELECT COUNT(*) FROM licitaciones WHERE detalle_obtenido = 1')
     con_detalles = cursor.fetchone()[0]
     
-    # Activas
-    cursor.execute('SELECT COUNT(*) FROM licitaciones WHERE id_estado = 2')
-    activas = cursor.fetchone()[0]
+    # Desglose por estado
+    cursor.execute('SELECT estado, COUNT(*) FROM licitaciones GROUP BY estado ORDER BY COUNT(*) DESC')
+    estados = cursor.fetchall()
     
     # Total productos
     cursor.execute('SELECT COUNT(*) FROM productos_solicitados')
     total_productos = cursor.fetchone()[0]
     
     # Usuarios con perfil
-    cursor.execute('SELECT COUNT(*) FROM perfiles_empresas')
-    usuarios = cursor.fetchone()[0]
+    # Nota: perfiles_empresas está en la otra BD (db_bot), pero aquí usamos 'conn' que es db_extended
+    # Debemos abrir conexión a db_bot para esto o quitarlo si da error.
+    # Asumimos que db_bot.obtener_perfil usa su propia conexión, así que aquí deberíamos usar db_bot
+    # Pero el código original usaba 'cursor' de db_extended para consultar 'perfiles_empresas'?
+    # Espera, 'perfiles_empresas' está en database_bot.py, NO en database_extended.py
+    # El código original línea 326: cursor.execute('SELECT COUNT(*) FROM perfiles_empresas')
+    # Si 'conn' viene de db.get_connection() (database_extended), entonces fallaría si las tablas no están juntas.
+    # En SQLite pueden estar en archivos distintos. En Postgres en la misma DB.
+    # Para evitar errores, usaré db_bot para contar usuarios.
     
     conn.close()
     
+    # Contar usuarios usando db_bot
+    conn_bot = db_bot.get_connection()
+    cursor_bot = conn_bot.cursor()
+    cursor_bot.execute('SELECT COUNT(*) FROM perfiles_empresas')
+    usuarios = cursor_bot.fetchone()[0]
+    conn_bot.close()
+    
     mensaje = "📊 <b>Estadísticas del Sistema</b>\n\n"
     mensaje += f"📋 Total licitaciones: <b>{total_lic:,}</b>\n"
-    mensaje += f"✅ Con detalles completos: <b>{con_detalles:,}</b>\n"
-    mensaje += f"🟢 Activas: <b>{activas:,}</b>\n"
-    mensaje += f"📦 Productos catalogados: <b>{total_productos:,}</b>\n"
-    mensaje += f"👥 Empresas registradas: <b>{usuarios:,}</b>\n"
+    mensaje += f"✅ Con detalles completos: <b>{con_detalles:,}</b>\n\n"
+    
+    mensaje += "<b>📌 Desglose por Estado:</b>\n"
+    for estado, cantidad in estados:
+        icono = "🟢" if "Publicada" in estado else "🔴" if "Cerrada" in estado else "⚖️" if "Adjudicada" in estado else "⚪"
+        mensaje += f"{icono} {estado}: <b>{cantidad:,}</b>\n"
+        
+    mensaje += f"\n📦 Productos catalogados: <b>{total_productos:,}</b>\n"
+    mensaje += f"👥 Empresas registradas: <b>{usuarios:,}</b>\n\n"
+    
+    # Tiempos de actualización
+    from datetime import datetime
+    
+    last_list = db_bot.get_system_status('last_scrape_list')
+    last_details = db_bot.get_system_status('last_scrape_details')
+    
+    def format_time_ago(iso_str):
+        if not iso_str: return "Nunca"
+        dt = datetime.fromisoformat(iso_str)
+        diff = datetime.now() - dt
+        minutes = int(diff.total_seconds() / 60)
+        if minutes < 60:
+            return f"hace {minutes} min"
+        hours = int(minutes / 60)
+        return f"hace {hours} horas"
+
+    mensaje += "<b>🕒 Última Actualización:</b>\n"
+    mensaje += f"• Listado: {format_time_ago(last_list['value'] if last_list else None)}\n"
+    mensaje += f"• Detalles: {format_time_ago(last_details['value'] if last_details else None)}\n"
     
     await update.message.reply_text(mensaje, parse_mode='HTML')
+
+
+# ==================== REDACCIÓN DE OFERTAS (IA) ====================
+
+async def redactar_oferta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inicia el proceso de redacción de una oferta"""
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ Uso: /redactar_oferta [código]\n"
+            "Ejemplo: /redactar_oferta 1057389-2539-COT25",
+            parse_mode='HTML'
+        )
+        return
+    
+    codigo = context.args[0]
+    
+    # Verificar perfil
+    perfil = db_bot.obtener_perfil(user_id)
+    if not perfil:
+        await update.message.reply_text("❌ Primero configura tu perfil con /configurar_perfil")
+        return
+        
+    # Verificar si existe la licitación
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    placeholder = '%s' if db.USE_POSTGRES else '?'
+    cursor.execute(f'SELECT nombre FROM licitaciones WHERE codigo = {placeholder}', (codigo,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        await update.message.reply_text(f"❌ No encontré la licitación {codigo}")
+        return
+        
+    nombre_lic = row[0]
+    
+    # Preguntar formato
+    keyboard = [
+        [
+            InlineKeyboardButton("📝 Texto Telegram", callback_data=f"redactar_texto_{codigo}"),
+            InlineKeyboardButton("📄 PDF (Markdown)", callback_data=f"redactar_pdf_{codigo}")
+        ],
+        [
+            InlineKeyboardButton("📧 Correo", callback_data=f"redactar_correo_{codigo}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        f"✍️ <b>Redactar Oferta para:</b>\n"
+        f"{nombre_lic}\n\n"
+        "¿En qué formato quieres el borrador?",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+
+async def ejecutar_redaccion(update: Update, context: ContextTypes.DEFAULT_TYPE, codigo, formato):
+    """Ejecuta la generación del borrador"""
+    user_id = update.effective_user.id
+    perfil = db_bot.obtener_perfil(user_id)
+    
+    await update.effective_message.reply_text(f"🤖 Generando borrador en formato <b>{formato.upper()}</b>...", parse_mode='HTML')
+    
+    # Obtener datos completos de la licitación
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    placeholder = '%s' if db.USE_POSTGRES else '?'
+    
+    # Consultar columnas básicas
+    cursor.execute(f'''
+        SELECT codigo, nombre, organismo, descripcion, monto_disponible, fecha_cierre 
+        FROM licitaciones WHERE codigo = {placeholder}
+    ''', (codigo,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        await update.effective_message.reply_text("❌ Error al obtener datos de la licitación.")
+        return
+        
+    licitacion = {
+        'codigo': row[0],
+        'nombre': row[1],
+        'organismo': row[2],
+        'descripcion': row[3],
+        'monto_disponible': row[4],
+        'fecha_cierre': row[5]
+    }
+    
+    # Generar con IA
+    borrador = gemini_ai.generar_borrador_oferta(licitacion, perfil, formato)
+    
+    # Enviar resultado
+    if len(borrador) > 4000:
+        # Si es muy largo, enviar en partes o archivo
+        # Por simplicidad, enviamos los primeros 4000 caracteres
+        await update.effective_message.reply_text(borrador[:4000])
+        if len(borrador) > 4000:
+            await update.effective_message.reply_text(borrador[4000:])
+    else:
+        await update.effective_message.reply_text(borrador)
+        
+    # Sugerencia final
+    await update.effective_message.reply_text(
+        "💡 Puedes copiar y editar este texto antes de enviarlo.\n"
+        "Si necesitas ajustes, puedes pedirlo de nuevo con otro formato."
+    )

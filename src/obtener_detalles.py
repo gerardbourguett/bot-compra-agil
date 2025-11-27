@@ -85,6 +85,15 @@ def obtener_detalles(max_licitaciones=None, pausa_entre_requests=0.5):
     print(f"❌ Errores: {errores}")
     print(f"📈 Tasa de éxito: {(procesadas/len(codigos)*100):.1f}%")
     
+    # Registrar timestamp de ejecución
+    try:
+        import database_bot as db_bot
+        from datetime import datetime
+        db_bot.update_system_status('last_scrape_details', datetime.now().isoformat())
+        print("🕒 Timestamp actualizado en system_status")
+    except Exception as e:
+        print(f"⚠️ No se pudo actualizar timestamp: {e}")
+    
     return procesadas
 
 

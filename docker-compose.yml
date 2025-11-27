@@ -37,28 +37,7 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - ./logs:/app/logs
-    command: >
-      sh -c "
-        echo '⏰ Scraper iniciado - Ejecutará cada 4 horas'
-        while true; do
-          echo ''
-          echo '========================================='
-          echo '🕷️  INICIANDO SCRAPER'
-          echo '📅 Fecha: $$(date)'
-          echo $$(date) > /app/logs/ultima_ejecucion.txt
-          echo '========================================='
-          python scraper.py
-          echo ''
-          echo '📝 Obteniendo detalles de licitaciones...'
-          python obtener_detalles.py
-          echo ''
-          echo '========================================='
-          echo '✅ Scraper completado'
-          echo '⏰ Próxima ejecución en 4 horas'
-          echo '========================================='
-          sleep 14400
-        done
-      "
+    command: python scheduler.py
 
   # Bot de Telegram
   bot:

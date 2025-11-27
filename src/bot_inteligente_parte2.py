@@ -374,6 +374,10 @@ async def analizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Botones de acción
     keyboard = [
         [
+            InlineKeyboardButton("👍 Me sirve", callback_data=f"feedback_like_{codigo}"),
+            InlineKeyboardButton("👎 No me sirve", callback_data=f"feedback_dislike_{codigo}")
+        ],
+        [
             InlineKeyboardButton("💡 Ayuda Cotizar", callback_data=f"ayuda_{codigo}"),
             InlineKeyboardButton("⭐ Guardar", callback_data=f"guardar_{codigo}")
         ],
