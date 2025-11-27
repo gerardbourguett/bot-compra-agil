@@ -88,16 +88,14 @@ jobs:
 
           # 6. Limpiar contenedores antiguos (para evitar conflictos de nombres)
           docker rm -f compra_agil_db compra_agil_scraper compra_agil_bot || true
-          # BORRAR VOLUMEN DE DATOS para reiniciar password (SOLO SI SE REQUIERE RESET)
-          docker volume rm app_postgres_data || true
 
-          # 7. Reiniciar servicios
+          # 6. Reiniciar servicios
           # Detectamos si usar 'docker compose' (v2) o 'docker-compose' (v1)
           if docker compose version >/dev/null 2>&1; then
-              docker compose down || true
+              docker compose down -v || true
               docker compose up -d
           else
-              docker-compose down || true
+              docker-compose down -v || true
               docker-compose up -d
           fi
 
