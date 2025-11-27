@@ -53,10 +53,10 @@ jobs:
 
   deploy:
     needs: build-and-push
-    runs-on: self-hosted  # <--- Esto ejecuta el código DIRECTAMENTE en tu servidor
+    runs-on: self-hosted # <--- Esto ejecuta el código DIRECTAMENTE en tu servidor
     steps:
       - name: Desplegar en Servidor Local
-        run: |  # <--- Usamos 'run' directo, sin SSH Action
+        run: | # <--- Usamos 'run' directo, sin SSH Action
           # 1. Login en GHCR (Usamos el token del repo)
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
@@ -86,7 +86,12 @@ jobs:
           # Forzamos a que docker-compose use la imagen del repo, no local
           echo "IMAGE_REPO=${{ github.repository }}" >> .env
 
-          # 6. Reiniciar servicios
+          # 6. Limpiar contenedores antiguos (para evitar conflictos de nombres)
+          docker rm -f compra_agil_db compra_agil_scraper compra_agil_bot || true
+          # BORRAR VOLUMEN DE DATOS para reiniciar password (SOLO SI SE REQUIERE RESET)
+          docker volume rm app_postgres_data || true
+
+          # 7. Reiniciar servicios
           # Detectamos si usar 'docker compose' (v2) o 'docker-compose' (v1)
           if docker compose version >/dev/null 2>&1; then
               docker compose down || true
