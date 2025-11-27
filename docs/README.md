@@ -247,6 +247,16 @@ Sistema completo para ayudar a PYMEs a encontrar, analizar y ganar licitaciones 
 - Recordatorios de cierre
 - Cambios en licitaciones guardadas
 
+### ✍️ Generador de Ofertas (IA)
+- Redacción automática de borradores
+- Formatos: Texto Telegram, PDF (Markdown), Correo
+- Personalizado según tu perfil y la licitación
+
+### 📊 Reportes Administrativos
+- Exportación a Excel (`/exportar_reporte`)
+- Análisis de competencia (Top 10 Ganadores)
+- Estadísticas de mercado y organismos
+
 ## 📦 Componentes del Sistema
 
 ```
@@ -397,12 +407,33 @@ python obtener_detalles.py
 # Ejecutar scraper.py diariamente a las 8:00 AM
 ```
 
-**Linux/Mac (cron):**
-```bash
-# Agregar a crontab
 0 8 * * * cd /ruta/al/proyecto && python scraper.py
 0 9 * * * cd /ruta/al/proyecto && python obtener_detalles.py
 ```
+
+### Importación de Datos Históricos (Big Data)
+
+Para potenciar el análisis de competencia, puedes importar el historial de licitaciones (aprox. 1GB/mes).
+
+**Características:**
+*   Descarga y procesa archivos ZIP mensuales.
+*   **Seguridad:** Verifica si el mes ya fue importado para evitar duplicados.
+*   **Eficiencia:** Usa streaming para no ocupar disco y `COPY` para inserción rápida.
+
+**Ejecución Manual:**
+
+```bash
+# Importar mes actual (por defecto)
+python src/importar_historico.py
+
+# Importar URL específica
+python src/importar_historico.py --url "https://.../COT_2024-12.zip"
+
+# Forzar re-importación (si ya existen datos)
+python src/importar_historico.py --force
+```
+
+> **Nota:** El script descarga el ZIP temporalmente, procesa los datos y lo elimina automáticamente. No ocupa espacio permanente en el servidor.
 
 ## 🤖 Análisis con Gemini AI
 

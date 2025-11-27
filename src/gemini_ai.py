@@ -256,6 +256,67 @@ Responde SOLO con el JSON."""
         return {"error": str(e)}
 
 
+def generar_borrador_oferta(licitacion, perfil_empresa, formato="texto", instrucciones_extra=""):
+    """
+    Genera un borrador de oferta para una licitación.
+    
+    Args:
+        licitacion: Dict con datos de la licitación
+        perfil_empresa: Dict con perfil de la empresa
+        formato: "texto", "pdf" (estructura formal), "correo"
+        instrucciones_extra: Instrucciones adicionales del usuario
+        
+    Returns:
+        str: El contenido generado
+    """
+    
+    tipo_formato = {
+        "texto": "un mensaje de texto para Telegram, conciso y directo, resaltando los puntos clave.",
+        "pdf": "una propuesta formal estructurada (Introducción, Propuesta Técnica, Propuesta Económica, Plazos, Experiencia). Usa formato Markdown.",
+        "correo": "un correo electrónico profesional, con asunto sugerido, saludo formal y cuerpo persuasivo."
+    }
+    
+    desc_formato = tipo_formato.get(formato, tipo_formato["texto"])
+    
+    prompt = f"""Actúa como un experto en ventas B2B y licitaciones públicas.
+Redacta {desc_formato} para postular a la siguiente licitación de Compra Ágil.
+
+PERFIL DE MI EMPRESA:
+- Nombre: {perfil_empresa.get('nombre_empresa', 'No especificado')}
+- Giro: {perfil_empresa.get('tipo_negocio', 'No especificado')}
+- Productos/Servicios: {perfil_empresa.get('productos_servicios', 'No especificado')}
+- Fortalezas: {perfil_empresa.get('palabras_clave', '')}
+- Experiencia: {perfil_empresa.get('experiencia_anos', 0)} años
+- Ubicación: {perfil_empresa.get('ubicacion', 'No especificado')}
+
+DATOS DE LA LICITACIÓN:
+- Código: {licitacion.get('codigo')}
+- Nombre: {licitacion.get('nombre')}
+- Organismo: {licitacion.get('organismo')}
+- Descripción: {licitacion.get('descripcion', 'Ver detalles en ficha')}
+- Presupuesto: ${licitacion.get('monto_disponible', 0):,} (Referencial)
+- Fecha Cierre: {licitacion.get('fecha_cierre')}
+
+INSTRUCCIONES ADICIONALES:
+{instrucciones_extra}
+
+OBJETIVO:
+Persuadir al comprador de que somos la mejor opción por calidad, confianza y cumplimiento.
+Si es formato PDF, estructura el contenido con títulos claros.
+Si es correo, incluye el Asunto.
+
+Genera SOLO el contenido del borrador."""
+
+    try:
+        model = genai.GenerativeModel(MODEL_NAME)
+        response = model.generate_content(prompt)
+        return response.text.strip()
+        
+    except Exception as e:
+        print(f"Error al generar borrador: {e}")
+        return f"Lo siento, hubo un error al generar el borrador: {str(e)}"
+
+
 if __name__ == "__main__":
     # Prueba básica
     if GEMINI_API_KEY:

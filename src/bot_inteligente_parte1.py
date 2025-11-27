@@ -158,15 +158,34 @@ async def recibir_palabras_clave(update: Update, context: ContextTypes.DEFAULT_T
     return CAPACIDAD
 
 
+from constantes import REGIONES
+
 async def recibir_capacidad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Recibe la capacidad de entrega"""
     try:
         dias = int(update.message.text)
         context.user_data['perfil']['capacidad_entrega_dias'] = dias
         
+        # Crear teclado de regiones (2 columnas)
+        keyboard = []
+        row = []
+        for region in REGIONES:
+            row.append(InlineKeyboardButton(region['nombre'], callback_data=f"region_{region['id']}"))
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+            
+        # Opción de "Otra" o "Todas"
+        keyboard.append([InlineKeyboardButton("Todas / Otra", callback_data="region_otra")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await update.message.reply_text(
-            "¿En qué <b>ciudad o región</b> está ubicada tu empresa?\n"
-            "(Ejemplo: 'Santiago', 'Valparaíso', 'Región Metropolitana')",
+            "¿En qué <b>región</b> opera principalmente tu empresa?\n"
+            "Selecciona una opción:",
+            reply_markup=reply_markup,
             parse_mode='HTML'
         )
         return UBICACION
@@ -179,15 +198,45 @@ async def recibir_capacidad(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def recibir_ubicacion(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe la ubicación"""
-    context.user_data['perfil']['ubicacion'] = update.message.text
-    
-    await update.message.reply_text(
-        "¿Cuántos <b>años de experiencia</b> tiene tu empresa?\n"
-        "(Escribe solo el número, o 0 si es nueva)",
-        parse_mode='HTML'
-    )
-    return EXPERIENCIA
+    """Recibe la ubicación (callback o texto)"""
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        
+        data = query.data
+        if data == "region_otra":
+            await query.edit_message_text(
+                "Por favor escribe la ciudad o región manualmente:"
+            )
+            return UBICACION
+            
+        # Buscar nombre de la región
+        region_id = int(data.split('_')[1])
+        nombre_region = next((r['nombre'] for r in REGIONES if r['id'] == region_id), "Desconocida")
+        
+        context.user_data['perfil']['ubicacion'] = nombre_region
+        
+        # Eliminar teclado y confirmar
+        await query.edit_message_text(f"📍 Ubicación seleccionada: <b>{nombre_region}</b>", parse_mode='HTML')
+        
+        # Siguiente paso
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="¿Cuántos <b>años de experiencia</b> tiene tu empresa?\n(Escribe solo el número, o 0 si es nueva)",
+            parse_mode='HTML'
+        )
+        return EXPERIENCIA
+        
+    else:
+        # Fallback para texto manual
+        context.user_data['perfil']['ubicacion'] = update.message.text
+        
+        await update.message.reply_text(
+            "¿Cuántos <b>años de experiencia</b> tiene tu empresa?\n"
+            " (Escribe solo el número, o 0 si es nueva)",
+            parse_mode='HTML'
+        )
+        return EXPERIENCIA
 
 
 async def recibir_experiencia(update: Update, context: ContextTypes.DEFAULT_TYPE):

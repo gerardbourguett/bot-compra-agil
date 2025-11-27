@@ -288,6 +288,9 @@ def calcular_score_compatibilidad_simple(licitacion, perfil):
     return min(100, int(score_final))
 
 
+    return min(100, int(score_final))
+
+
 def obtener_estadisticas_busqueda(palabras_clave):
     """
     Obtiene estadísticas sobre licitaciones que coinciden con palabras clave.
@@ -315,6 +318,44 @@ def obtener_estadisticas_busqueda(palabras_clave):
         'monto_minimo': min(l.get('monto_disponible', 0) for l in licitaciones),
         'monto_maximo': max(l.get('monto_disponible', 0) for l in licitaciones)
     }
+
+
+def buscar_oportunidades_baja_competencia(perfil, dias=3, max_competencia=2, limite=10):
+    """
+    Busca licitaciones compatibles que cierran pronto y tienen poca competencia.
+    """
+    # 1. Buscar licitaciones compatibles con el perfil
+    candidatas = buscar_compatibles_con_perfil(perfil, limite=limite*3)
+    
+    oportunidades = []
+    ahora = datetime.now()
+    limite_fecha = ahora + timedelta(days=dias)
+    
+    for lic in candidatas:
+        # Filtro 1: Baja competencia
+        competencia = lic.get('cantidad_proveedores_cotizando', 0)
+        if competencia > max_competencia:
+            continue
+            
+        # Filtro 2: Cierra pronto (pero no ha cerrado aún)
+        try:
+            # Intentar parsear fecha cierre (formato esperado: YYYY-MM-DD HH:MM:SS o similar)
+            # La BD puede tener formatos variados, intentamos ser flexibles o asumir string ISO
+            fecha_cierre_str = lic.get('fecha_cierre', '')
+            # Asumimos que fecha_cierre_str viene en formato ISO o compatible para comparación de strings
+            # Si es string YYYY-MM-DD HH:MM, la comparación léxica funciona
+            
+            # Comparación simple de strings ISO (funciona si el formato es consistente)
+            fecha_actual_str = ahora.strftime("%Y-%m-%d %H:%M")
+            fecha_limite_str = limite_fecha.strftime("%Y-%m-%d %H:%M")
+            
+            if fecha_actual_str <= fecha_cierre_str <= fecha_limite_str:
+                oportunidades.append(lic)
+                
+        except Exception:
+            continue
+            
+    return oportunidades[:limite]
 
 
 if __name__ == "__main__":

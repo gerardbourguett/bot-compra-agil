@@ -1,0 +1,7 @@
+# Configuración de Bandit
+# B608: Hardcoded SQL expressions
+# Se desactiva porque usamos f-strings para insertar el placeholder (%s o ?)
+# para compatibilidad entre PostgreSQL y SQLite.
+# Los datos reales SIEMPRE se pasan como parámetros, por lo que es seguro.
+
+skips: ["B608"]

@@ -5,9 +5,15 @@ Detecta automáticamente cuál usar basándose en DATABASE_URL.
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Cargar variables de entorno
+load_dotenv()
 
 # Detectar tipo de base de datos
 DATABASE_URL = os.getenv('DATABASE_URL', '')
+print(f"DEBUG: DATABASE_URL='{DATABASE_URL}'")
+USE_POSTGRES = DATABASE_URL.startswith('postgresql')
 USE_POSTGRES = DATABASE_URL.startswith('postgresql')
 
 if USE_POSTGRES:
@@ -137,9 +143,79 @@ def iniciar_db_extendida():
         )
     ''')
     
+    # Tabla de categorías (Tags)
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS categorias (
+            id {id_type if USE_POSTGRES else 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+            nombre TEXT UNIQUE,
+            descripcion TEXT
+        )
+    ''')
+    
+    # Tabla de relación Licitaciones <-> Categorías
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS licitaciones_categorias (
+            codigo_licitacion TEXT,
+            categoria_id INTEGER,
+            PRIMARY KEY (codigo_licitacion, categoria_id),
+            FOREIGN KEY (codigo_licitacion) REFERENCES licitaciones(codigo),
+            FOREIGN KEY (categoria_id) REFERENCES categorias(id)
+        )
+    ''')
+    
+    # Tabla de Competidores (Placeholder para futuro análisis)
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS competidores (
+            rut TEXT PRIMARY KEY,
+            nombre TEXT,
+            es_ganador_frecuente INTEGER DEFAULT 0,
+            total_adjudicaciones INTEGER DEFAULT 0,
+            fecha_ultima_oferta TEXT
+        )
+    ''')
+    
+    # Tabla de Ofertas de Competidores (Detalle de cada cotización)
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS ofertas_competidores (
+            id {id_type if USE_POSTGRES else 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+            codigo_licitacion TEXT,
+            rut_competidor TEXT,
+            monto_total INTEGER,
+            es_ganador INTEGER DEFAULT 0,
+            fecha_oferta TEXT,
+            descripcion TEXT,
+            FOREIGN KEY (codigo_licitacion) REFERENCES licitaciones(codigo),
+            FOREIGN KEY (rut_competidor) REFERENCES competidores(rut)
+        )
+    ''')
+    
+    # Tabla de histórico de licitaciones (para Big Data)
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS historico_licitaciones (
+            id {id_type},
+            codigo_cotizacion {text_type},
+            nombre_cotizacion {text_type},
+            region {text_type},
+            rut_proveedor {text_type},
+            nombre_proveedor {text_type},
+            producto_cotizado {text_type},
+            cantidad INTEGER,
+            monto_total INTEGER,
+            detalle_oferta {text_type},
+            es_ganador BOOLEAN,
+            fecha_cierre DATE,
+            fecha_importacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Índices para búsquedas rápidas en histórico
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hist_codigo ON historico_licitaciones(codigo_cotizacion)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hist_producto ON historico_licitaciones(producto_cotizado)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hist_ganador ON historico_licitaciones(es_ganador)')
+
     conn.commit()
     conn.close()
-    print("✅ Base de datos extendida creada/verificada")
+    print("Base de datos extendida creada/verificada")
 
 
 def guardar_licitacion_basica(datos):
@@ -236,8 +312,8 @@ def guardar_detalle_completo(codigo, ficha, historial=None, adjuntos=None):
                 ficha.get('fecha_cierre_segundo_llamado'), ficha.get('tipo_presupuesto'),
                 ficha.get('estado_convocatoria'), ficha.get('total_demandas'),
                 ficha.get('total_ofertas_recibidas'),
-                ficha.get('considera_requisitos_medioambientales'),
-                ficha.get('considera_requisitos_impacto_social_economico'),
+                int(bool(ficha.get('considera_requisitos_medioambientales'))),
+                int(bool(ficha.get('considera_requisitos_impacto_social_economico'))),
                 json.dumps(ficha, ensure_ascii=False)
             ))
         else:
@@ -263,8 +339,8 @@ def guardar_detalle_completo(codigo, ficha, historial=None, adjuntos=None):
                 ficha.get('fecha_cierre_segundo_llamado'), ficha.get('tipo_presupuesto'),
                 ficha.get('estado_convocatoria'), ficha.get('total_demandas'),
                 ficha.get('total_ofertas_recibidas'),
-                ficha.get('considera_requisitos_medioambientales'),
-                ficha.get('considera_requisitos_impacto_social_economico'),
+                int(bool(ficha.get('considera_requisitos_medioambientales'))),
+                int(bool(ficha.get('considera_requisitos_impacto_social_economico'))),
                 json.dumps(ficha, ensure_ascii=False)
             ))
         
@@ -307,7 +383,7 @@ def guardar_detalle_completo(codigo, ficha, historial=None, adjuntos=None):
                 ''', (
                     codigo,
                     adj.get('nombreArchivo'),
-                    adj.get('idAdjunto')
+                    adj.get('id')
                 ))
         
         # Marcar como detalle obtenido
@@ -335,18 +411,16 @@ def obtener_licitaciones_sin_detalle(limite=100):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
-    
-    cursor.execute(f'''
-        SELECT codigo FROM licitaciones 
-        WHERE detalle_obtenido = 0 
-        LIMIT {placeholder}
-    ''', (limite,))
-    
+    # Usamos parámetros para evitar inyección SQL
     if USE_POSTGRES:
-        resultados = [row[0] for row in cursor.fetchall()]
+        query = 'SELECT codigo FROM licitaciones WHERE detalle_obtenido = 0 LIMIT %s'
     else:
-        resultados = [row[0] for row in cursor.fetchall()]
+        query = 'SELECT codigo FROM licitaciones WHERE detalle_obtenido = 0 LIMIT ?'
+    
+    cursor.execute(query, (limite,))
+    
+    # En ambos casos devuelve una lista de tuplas
+    resultados = [row[0] for row in cursor.fetchall()]
     
     conn.close()
     return resultados
@@ -359,17 +433,28 @@ def buscar_por_palabra(palabra, limite=10):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
     patron = f"%{palabra}%"
     
-    cursor.execute(f'''
-        SELECT codigo, nombre, organismo, fecha_cierre
-        FROM licitaciones
-        WHERE LOWER(nombre) LIKE LOWER({placeholder})
-        OR LOWER(organismo) LIKE LOWER({placeholder})
-        ORDER BY fecha_cierre DESC
-        LIMIT {placeholder}
-    ''', (patron, patron, limite))
+    if USE_POSTGRES:
+        query = '''
+            SELECT codigo, nombre, organismo, fecha_cierre
+            FROM licitaciones
+            WHERE LOWER(nombre) LIKE LOWER(%s)
+            OR LOWER(organismo) LIKE LOWER(%s)
+            ORDER BY fecha_cierre DESC
+            LIMIT %s
+        '''
+    else:
+        query = '''
+            SELECT codigo, nombre, organismo, fecha_cierre
+            FROM licitaciones
+            WHERE LOWER(nombre) LIKE LOWER(?)
+            OR LOWER(organismo) LIKE LOWER(?)
+            ORDER BY fecha_cierre DESC
+            LIMIT ?
+        '''
+    
+    cursor.execute(query, (patron, patron, limite))
     
     resultados = cursor.fetchall()
     conn.close()

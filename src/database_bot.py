@@ -87,22 +87,105 @@ def iniciar_db_bot():
         )
     ''')
     
+    # Tabla de feedback para ML
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS feedback_analisis (
+            id {id_type},
+            telegram_user_id BIGINT,
+            codigo_licitacion TEXT,
+            feedback INTEGER,
+            fecha TEXT
+        )
+    ''')
+    
+    # Tabla de configuración de alertas granulares
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS alertas_config (
+            id {id_type},
+            telegram_user_id BIGINT,
+            termino_busqueda TEXT,
+            monto_minimo INTEGER DEFAULT 0,
+            activo INTEGER DEFAULT 1,
+            fecha_creacion TEXT
+        )
+    ''')
+    
+    # Tabla de estado del sistema (para timestamps de scrapers)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS system_status (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT
+        )
+    ''')
+    
     # Índices
     if USE_POSTGRES:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_guardadas_user ON licitaciones_guardadas(telegram_user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_guardadas_codigo ON licitaciones_guardadas(codigo_licitacion)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_historial_user ON historial_interacciones(telegram_user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_feedback_codigo ON feedback_analisis(codigo_licitacion)')
     else:
         try:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_guardadas_user ON licitaciones_guardadas(telegram_user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_guardadas_codigo ON licitaciones_guardadas(codigo_licitacion)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_historial_user ON historial_interacciones(telegram_user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_feedback_codigo ON feedback_analisis(codigo_licitacion)')
         except:
             pass  # Índices ya existen
     
     conn.commit()
     conn.close()
     print("✅ Tablas del bot inteligente creadas/verificadas")
+
+
+# ==================== SYSTEM STATUS ====================
+
+def update_system_status(key, value):
+    """Actualiza el estado del sistema (ej: timestamp de scraper)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    placeholder = '%s' if USE_POSTGRES else '?'
+    ahora = datetime.now().isoformat()
+    
+    try:
+        if USE_POSTGRES:
+            cursor.execute(f'''
+                INSERT INTO system_status (key, value, updated_at)
+                VALUES ({placeholder}, {placeholder}, {placeholder})
+                ON CONFLICT (key) DO UPDATE SET
+                    value = EXCLUDED.value,
+                    updated_at = EXCLUDED.updated_at
+            ''', (key, value, ahora))
+        else:
+            cursor.execute(f'''
+                INSERT OR REPLACE INTO system_status (key, value, updated_at)
+                VALUES ({placeholder}, {placeholder}, {placeholder})
+            ''', (key, value, ahora))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error al actualizar system_status: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+def get_system_status(key):
+    """Obtiene el valor de una clave de estado."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    placeholder = '%s' if USE_POSTGRES else '?'
+    
+    cursor.execute(f'SELECT value, updated_at FROM system_status WHERE key = {placeholder}', (key,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return {'value': row[0], 'updated_at': row[1]}
+    return None
 
 
 # ==================== PERFILES ====================
@@ -363,6 +446,31 @@ def registrar_interaccion(user_id, accion, codigo=None):
     except Exception as e:
         print(f"Error al registrar interacción: {e}")
         conn.rollback()
+    finally:
+        conn.close()
+
+
+def registrar_feedback(user_id, codigo, feedback):
+    """
+    Registra el feedback del usuario sobre un análisis (1=Like, 0=Dislike).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    placeholder = '%s' if USE_POSTGRES else '?'
+    
+    try:
+        cursor.execute(f'''
+            INSERT INTO feedback_analisis 
+            (telegram_user_id, codigo_licitacion, feedback, fecha)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
+        ''', (user_id, codigo, feedback, datetime.now().isoformat()))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error al registrar feedback: {e}")
+        conn.rollback()
+        return False
     finally:
         conn.close()
 
