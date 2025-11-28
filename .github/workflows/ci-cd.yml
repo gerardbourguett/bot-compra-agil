@@ -74,7 +74,8 @@ jobs:
 
           if [ -d ".git" ]; then
             git remote set-url origin "$REPO_URL"
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
           else
             git clone "$REPO_URL" .
           fi
