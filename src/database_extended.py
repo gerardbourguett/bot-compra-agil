@@ -60,8 +60,13 @@ def iniciar_db_extendida():
         try:
             cursor.execute(sql)
         except Exception as e:
-            if "already exists" in str(e) or "duplicate key" in str(e):
-                pass  # Ignorar si ya existe
+            error_str = str(e).lower()
+            if "already exists" in error_str or "duplicate key" in error_str:
+                # En PostgreSQL, necesitamos hacer ROLLBACK después de un error en transacción
+                try:
+                    conn.rollback()
+                except:
+                    pass
             else:
                 raise
 
