@@ -45,20 +45,33 @@ def iniciar_db_extendida():
     except Exception as e:
         print(f"❌ Error al conectar a la base de datos: {e}")
         raise
-    
+
     # Ajustar sintaxis según el tipo de BD
     if USE_POSTGRES:
         # PostgreSQL usa SERIAL en lugar de INTEGER PRIMARY KEY
-        id_type = "SERIAL PRIMARY KEY"
+        id_type = "INTEGER PRIMARY KEY"
         text_type = "TEXT"
     else:
         id_type = "INTEGER PRIMARY KEY"
         text_type = "TEXT"
-    
+
+    # Función auxiliar para ejecutar CREATE TABLE ignorando errores de duplicación
+    def safe_create_table(sql):
+        try:
+            cursor.execute(sql)
+        except Exception as e:
+            if "already exists" in str(e) or "duplicate key" in str(e):
+                pass  # Ignorar si ya existe
+            else:
+                raise
+
+    # Definir tipo de ID según BD
+    id_serial = "SERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
     # Tabla principal de licitaciones (resumen)
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS licitaciones (
-            id {id_type if USE_POSTGRES else 'INTEGER PRIMARY KEY'},
+            id {id_serial},
             codigo TEXT UNIQUE NOT NULL,
             nombre TEXT,
             fecha_publicacion TEXT,
@@ -77,9 +90,9 @@ def iniciar_db_extendida():
             detalle_obtenido INTEGER DEFAULT 0
         )
     ''')
-    
+
     # Tabla de detalles completos
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS licitaciones_detalle (
             codigo TEXT PRIMARY KEY,
             detalle_id INTEGER,
@@ -110,11 +123,11 @@ def iniciar_db_extendida():
             FOREIGN KEY (codigo) REFERENCES licitaciones(codigo)
         )
     ''')
-    
+
     # Tabla de productos solicitados
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS productos_solicitados (
-            id {id_type if USE_POSTGRES else 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+            id {id_serial},
             codigo_licitacion TEXT,
             nombre TEXT,
             descripcion TEXT,
@@ -123,11 +136,11 @@ def iniciar_db_extendida():
             FOREIGN KEY (codigo_licitacion) REFERENCES licitaciones(codigo)
         )
     ''')
-    
+
     # Tabla de historial
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS historial (
-            id {id_type if USE_POSTGRES else 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+            id {id_serial},
             codigo_licitacion TEXT,
             fecha TEXT,
             accion TEXT,
@@ -135,29 +148,29 @@ def iniciar_db_extendida():
             FOREIGN KEY (codigo_licitacion) REFERENCES licitaciones(codigo)
         )
     ''')
-    
+
     # Tabla de adjuntos
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS adjuntos (
-            id {id_type if USE_POSTGRES else 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+            id {id_serial},
             codigo_licitacion TEXT,
             nombre_archivo TEXT,
             id_adjunto TEXT,
             FOREIGN KEY (codigo_licitacion) REFERENCES licitaciones(codigo)
         )
     ''')
-    
+
     # Tabla de categorías (Tags)
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS categorias (
-            id {id_type if USE_POSTGRES else 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+            id {id_serial},
             nombre TEXT UNIQUE,
             descripcion TEXT
         )
     ''')
-    
+
     # Tabla de relación Licitaciones <-> Categorías
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS licitaciones_categorias (
             codigo_licitacion TEXT,
             categoria_id INTEGER,
@@ -166,9 +179,9 @@ def iniciar_db_extendida():
             FOREIGN KEY (categoria_id) REFERENCES categorias(id)
         )
     ''')
-    
+
     # Tabla de Competidores (Placeholder para futuro análisis)
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS competidores (
             rut TEXT PRIMARY KEY,
             nombre TEXT,
@@ -177,11 +190,11 @@ def iniciar_db_extendida():
             fecha_ultima_oferta TEXT
         )
     ''')
-    
+
     # Tabla de Ofertas de Competidores (Detalle de cada cotización)
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS ofertas_competidores (
-            id {id_type if USE_POSTGRES else 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+            id {id_serial},
             codigo_licitacion TEXT,
             rut_competidor TEXT,
             monto_total INTEGER,
@@ -192,43 +205,53 @@ def iniciar_db_extendida():
             FOREIGN KEY (rut_competidor) REFERENCES competidores(rut)
         )
     ''')
-    
+
     # Tabla de histórico de licitaciones (para Big Data)
-    cursor.execute(f'''
+    safe_create_table(f'''
         CREATE TABLE IF NOT EXISTS historico_licitaciones (
-            id {id_type},
-            codigo_cotizacion {text_type},
-            nombre_cotizacion {text_type},
-            region {text_type},
-            rut_proveedor {text_type},
-            nombre_proveedor {text_type},
-            producto_cotizado {text_type},
+            id {id_serial},
+            codigo_cotizacion TEXT,
+            nombre_cotizacion TEXT,
+            region TEXT,
+            rut_proveedor TEXT,
+            nombre_proveedor TEXT,
+            producto_cotizado TEXT,
             cantidad INTEGER,
             monto_total INTEGER,
-            detalle_oferta {text_type},
+            detalle_oferta TEXT,
             es_ganador BOOLEAN,
             fecha_cierre DATE,
             fecha_importacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # Índices para búsquedas rápidas en histórico
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hist_codigo ON historico_licitaciones(codigo_cotizacion)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hist_producto ON historico_licitaciones(producto_cotizado)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hist_ganador ON historico_licitaciones(es_ganador)')
+    safe_create_table('CREATE INDEX IF NOT EXISTS idx_hist_codigo ON historico_licitaciones(codigo_cotizacion)')
+    safe_create_table('CREATE INDEX IF NOT EXISTS idx_hist_producto ON historico_licitaciones(producto_cotizado)')
+    safe_create_table('CREATE INDEX IF NOT EXISTS idx_hist_ganador ON historico_licitaciones(es_ganador)')
 
     try:
         conn.commit()
         conn.close()
         print("✅ Base de datos extendida creada/verificada - Todas las tablas existen")
     except Exception as e:
-        print(f"❌ Error al crear/verificar tablas: {e}")
-        try:
-            conn.rollback()
-        except:
-            pass
-        conn.close()
-        raise
+        error_msg = str(e).lower()
+        if "duplicate key" not in error_msg and "already exists" not in error_msg:
+            print(f"❌ Error al crear/verificar tablas: {e}")
+            try:
+                conn.rollback()
+            except:
+                pass
+            conn.close()
+            raise
+        else:
+            # Si es solo duplicación de secuencias, ignorar
+            try:
+                conn.rollback()
+            except:
+                pass
+            conn.close()
+            print("✅ Tablas ya existen (ignorando errores de secuencias duplicadas)")
 
 
 def guardar_licitacion_basica(datos):
