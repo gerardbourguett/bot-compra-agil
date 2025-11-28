@@ -39,8 +39,12 @@ def iniciar_db_extendida():
     Crea todas las tablas necesarias para almacenar información completa
     de las licitaciones de Compra Ágil.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+    except Exception as e:
+        print(f"❌ Error al conectar a la base de datos: {e}")
+        raise
     
     # Ajustar sintaxis según el tipo de BD
     if USE_POSTGRES:
@@ -213,24 +217,40 @@ def iniciar_db_extendida():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hist_producto ON historico_licitaciones(producto_cotizado)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hist_ganador ON historico_licitaciones(es_ganador)')
 
-    conn.commit()
-    conn.close()
-    print("Base de datos extendida creada/verificada")
+    try:
+        conn.commit()
+        conn.close()
+        print("✅ Base de datos extendida creada/verificada - Todas las tablas existen")
+    except Exception as e:
+        print(f"❌ Error al crear/verificar tablas: {e}")
+        try:
+            conn.rollback()
+        except:
+            pass
+        conn.close()
+        raise
 
 
 def guardar_licitacion_basica(datos):
     """
     Guarda los datos básicos de una licitación (desde el listado).
-    
+
     Args:
         datos: Tupla con todos los campos de la licitación desde el JSON de la API
-    
+
     Returns:
         int: 1 si se guardó, 0 si ya existía
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-    
+    try:
+        # Asegurar que las tablas existen
+        iniciar_db_extendida()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+    except Exception as e:
+        print(f"❌ Error al preparar base de datos: {e}")
+        return 0
+
     try:
         if USE_POSTGRES:
             # PostgreSQL usa ON CONFLICT DO UPDATE
