@@ -7,6 +7,7 @@ venv
 
 # Archivos de logs
 *.log
+logs/
 
 # Archivos de entorno
 .env
