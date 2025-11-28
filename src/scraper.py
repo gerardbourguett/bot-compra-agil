@@ -50,7 +50,6 @@ def obtener_licitaciones(date_from, date_to, status=2, page_number=1):
         "date_from": date_from,
         "date_to": date_to,
         "order_by": "recent",
-        "page_number": page_number,
         "page_number": page_number
     }
     
