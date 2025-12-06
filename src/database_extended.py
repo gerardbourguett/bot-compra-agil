@@ -13,8 +13,7 @@ load_dotenv()
 # Detectar tipo de base de datos
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 print(f"DEBUG: DATABASE_URL='{DATABASE_URL}'")
-USE_POSTGRES = DATABASE_URL.startswith('postgresql')
-USE_POSTGRES = DATABASE_URL.startswith('postgresql')
+USE_POSTGRES = DATABASE_URL.startswith(('postgresql', 'postgres'))
 
 if USE_POSTGRES:
     import psycopg2
@@ -29,7 +28,9 @@ else:
 def get_connection():
     """Obtiene una conexión a la base de datos"""
     if USE_POSTGRES:
-        return psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.set_client_encoding('UTF8')
+        return conn
     else:
         return sqlite3.connect(DB_NAME)
 

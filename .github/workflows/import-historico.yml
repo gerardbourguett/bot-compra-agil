@@ -1,0 +1,44 @@
+name: Importar Histórico Mensual
+
+on:
+  schedule:
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+    inputs:
+      month:
+        description: Mes a importar (YYYY-MM)
+        required: false
+        type: string
+      force:
+        description: Forzar importación aunque existan datos
+        required: false
+        type: boolean
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Import last month
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          python src/run_monthly_import.py
+
+      - name: Import specified month
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ inputs.force }}" = "true" ]; then FORCE_FLAG="--force"; fi
+          python src/run_monthly_import.py --month "${{ inputs.month }}" $FORCE_FLAG

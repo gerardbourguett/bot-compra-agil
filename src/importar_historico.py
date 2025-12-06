@@ -49,7 +49,7 @@ def procesar_csv(zip_ref, filename, conn):
     print(f"Procesando {filename}...")
     
     with zip_ref.open(filename) as f:
-        text_file = io.TextIOWrapper(f, encoding='utf-8', errors='replace')
+        text_file = io.TextIOWrapper(f, encoding='utf-8-sig', errors='replace')
         reader = csv.DictReader(text_file, delimiter=';')
         
         batch = []
@@ -92,14 +92,24 @@ def procesar_csv(zip_ref, filename, conn):
         print(f"\nFinalizado {filename}: {count} registros insertados.")
 
 def insertar_batch(cursor, batch):
-    query = """
-        INSERT INTO historico_licitaciones (
-            codigo_cotizacion, nombre_cotizacion, region, rut_proveedor, 
-            nombre_proveedor, producto_cotizado, cantidad, monto_total, 
-            detalle_oferta, es_ganador, fecha_cierre
-        ) VALUES %s
-    """
-    execute_values(cursor, query, batch)
+    if db.USE_POSTGRES:
+        query = """
+            INSERT INTO historico_licitaciones (
+                codigo_cotizacion, nombre_cotizacion, region, rut_proveedor, 
+                nombre_proveedor, producto_cotizado, cantidad, monto_total, 
+                detalle_oferta, es_ganador, fecha_cierre
+            ) VALUES %s
+        """
+        execute_values(cursor, query, batch)
+    else:
+        query = """
+            INSERT INTO historico_licitaciones (
+                codigo_cotizacion, nombre_cotizacion, region, rut_proveedor, 
+                nombre_proveedor, producto_cotizado, cantidad, monto_total, 
+                detalle_oferta, es_ganador, fecha_cierre
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        cursor.executemany(query, batch)
 
 def verificar_existencia(url, conn):
     """Verifica si ya existen datos para el mes del archivo"""
