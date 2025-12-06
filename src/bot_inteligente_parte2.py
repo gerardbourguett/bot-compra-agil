@@ -10,6 +10,7 @@ import gemini_ai
 import api_client
 import io
 import pandas as pd
+import subscriptions as subs
 
 
 # ==================== BÚSQUEDAS ====================
@@ -268,6 +269,39 @@ async def analizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Analiza una licitación con Gemini AI"""
     user_id = update.effective_user.id
     
+    # NUEVO: Verificar límite de suscripción
+    check_result = subs.check_usage_limit(user_id, 'ai_analysis')
+    
+    if not check_result['allowed']:
+        tier = check_result.get('tier', 'free')
+        current = check_result.get('current_usage', 0)
+        limit = check_result.get('limit', 0)
+        
+        mensaje = f"🚫 <b>Límite alcanzado</b>\n\n"
+        mensaje += f"Has usado {current}/{limit} análisis IA hoy en tu plan <b>{tier.upper()}</b>.\n\n"
+        
+        if tier == 'free':
+            mensaje += "⭐ <b>Upgradea a EMPRENDEDOR por solo $4.990/mes:</b>\n"
+            mensaje += "  • 5 análisis IA por día\n"
+            mensaje += "  • 30 licitaciones guardadas\n"
+            mensaje += "  • Alertas automáticas\n"
+            mensaje += "  • Exportar a Excel\n\n"
+        elif tier == 'emprendedor':
+            mensaje += "🏢 <b>Upgradea a PYME por $9.990/mes:</b>\n"
+            mensaje += "  • 10 análisis IA por día\n"
+            mensaje += "  • Dashboard web\n"
+            mensaje += "  • Licitaciones ilimitadas\n\n"
+        
+        mensaje += "💡 Usa /upgrade para ver todos los planes"
+        
+        keyboard = [[
+            InlineKeyboardButton("⬆️ Ver Planes", callback_data="show_upgrade")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.effective_message.reply_text(mensaje, parse_mode='HTML', reply_markup=reply_markup)
+        return
+    
     if not context.args:
         await update.effective_message.reply_text(
             "⚠️ Uso: /analizar [código]\n"
@@ -388,11 +422,42 @@ async def analizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.effective_message.reply_text(mensaje, reply_markup=reply_markup, parse_mode='HTML')
+    
+    # NUEVO: Trackear uso exitoso
+    subs.track_usage(user_id, 'ai_analysis', codigo)
     db_bot.registrar_interaccion(user_id, 'analisis', codigo)
 
 
 async def exportar_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Genera y envía un Excel con los resultados de la búsqueda actual"""
+    user_id = update.effective_user.id
+    
+    # NUEVO: Verificar límite de suscripción
+    check_result = subs.check_usage_limit(user_id, 'excel_export')
+    
+    if not check_result['allowed']:
+        tier = check_result.get('tier', 'free')
+        
+        if tier == 'free':
+            mensaje = "🚫 <b>Feature Premium</b>\n\n"
+            mensaje += "La exportación a Excel está disponible desde el plan <b>EMPRENDEDOR</b>.\n\n"
+            mensaje += "⭐ <b>Upgradea por solo $4.990/mes:</b>\n"
+            mensaje += "  • 5 exportaciones Excel/mes\n"
+            mensaje += "  • 5 análisis IA por día\n"
+            mensaje += "  • Alertas automáticas\n"
+        else:
+            current = check_result.get('current_usage', 0)
+            limit = check_result.get('limit', 0)
+            mensaje = f"🚫 <b>Límite alcanzado</b>\n\n"
+            mensaje += f"Has usado {current}/{limit} exportaciones este mes en tu plan <b>{tier.upper()}</b>.\n\n"
+            mensaje += "💡 Upgradea para exportaciones ilimitadas"
+        
+        keyboard = [[InlineKeyboardButton("⬆️ Ver Planes", callback_data="show_upgrade")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.effective_message.reply_text(mensaje, parse_mode='HTML', reply_markup=reply_markup)
+        return
+    
     data = context.user_data.get('busqueda_actual')
     if not data:
         await update.effective_message.reply_text("⚠️ No hay búsqueda activa para exportar.")
@@ -435,6 +500,9 @@ async def exportar_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filename=f"licitaciones_{data['tipo']}.xlsx",
         caption=f"📊 Aquí tienes el reporte con {len(resultados)} licitaciones."
     )
+    
+    # NUEVO: Trackear uso exitoso
+    subs.track_usage(user_id, 'excel_export')
 
 
 async def detalle_licitacion(update: Update, context: ContextTypes.DEFAULT_TYPE):

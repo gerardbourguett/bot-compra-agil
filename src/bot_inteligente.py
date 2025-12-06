@@ -43,6 +43,7 @@ from bot_inteligente_parte3 import (
     ayuda_cotizar, recomendar, alertas_on, alertas_off, stats,
     redactar_oferta, ejecutar_redaccion
 )
+from subscription_commands import upgrade, mi_plan
 
 # Cargar variables de entorno
 load_dotenv()
@@ -154,6 +155,10 @@ def main():
     # Reportes Admin
     application.add_handler(CommandHandler('reporte', reporte))
     application.add_handler(CommandHandler('exportar_reporte', exportar_reporte))
+    
+    # Comandos de Suscripción (Monetización)
+    application.add_handler(CommandHandler('upgrade', upgrade))
+    application.add_handler(CommandHandler('mi_plan', mi_plan))
     
     # Handler genérico de botones (para analizar, guardar, ayuda)
     application.add_handler(CallbackQueryHandler(button_handler))
@@ -323,6 +328,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=None) # Quitar botones
         await update.effective_message.reply_text(f"👎 ¡Entendido! Evitaré recomendarte licitaciones similares a ({codigo}).")
 
+    elif data == 'show_upgrade':
+        # NUEVO: Mostrar planes cuando el usuario hace click en upgrade
+        from subscription_commands import upgrade
+        # Simular que viene del comando directamente
+        await upgrade(update, context)
     elif data.startswith('agregar_sugerencias_'):
         nuevas_palabras = data.replace('agregar_sugerencias_', '')
         user_id = update.effective_user.id

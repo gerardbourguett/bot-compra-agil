@@ -87,18 +87,72 @@ jobs:
           # Forzamos a que docker-compose use la imagen del repo, no local
           echo "IMAGE_REPO=${{ github.repository }}" >> .env
 
-          # 6. Limpiar contenedores antiguos (para evitar conflictos de nombres)
+          # 6. Verificar volúmenes existentes
+          echo "📊 Verificando volúmenes antes del despliegue..."
+          docker volume ls | grep postgres || echo "No hay volumen de postgres aún"
+
+          # 7. Crear backup automático de BD (si existe)
+          echo "💾 Creando backup de seguridad..."
+          mkdir -p backups
+          BACKUP_FILE="backups/backup_$(date +%Y%m%d_%H%M%S).sql"
+          
+          # Detectar qué comando de docker-compose usar
+          if docker compose version >/dev/null 2>&1; then
+              DOCKER_COMPOSE="docker compose"
+          else
+              DOCKER_COMPOSE="docker-compose"
+          fi
+          
+          # Intentar backup si la BD existe
+          $DOCKER_COMPOSE exec -T postgres pg_dump -U compra_agil_user compra_agil > "$BACKUP_FILE" 2>/dev/null && \
+            echo "✓ Backup creado: $BACKUP_FILE" || \
+            echo "⚠️ No hay BD existente para backup (normal en primer despliegue)"
+          
+          # Mantener solo los últimos 7 backups
+          ls -t backups/backup_*.sql 2>/dev/null | tail -n +8 | xargs -r rm || true
+
+          # 8. Limpiar contenedores antiguos (para evitar conflictos de nombres)
+          echo "🧹 Limpiando contenedores antiguos..."
           docker rm -f compra_agil_db compra_agil_scraper compra_agil_bot || true
 
-          # 6. Reiniciar servicios
-          # Detectamos si usar 'docker compose' (v2) o 'docker-compose' (v1)
-          if docker compose version >/dev/null 2>&1; then
-              docker compose down -v || true
-              docker compose up -d
+          # 9. Reiniciar servicios SIN eliminar volúmenes
+          echo "🔄 Reiniciando servicios (preservando volúmenes)..."
+          # ⚠️ CRÍTICO: NO usar -v porque elimina TODOS los datos de PostgreSQL
+          # ✓ Usar solo 'down' para preservar volúmenes
+          $DOCKER_COMPOSE down || true
+          $DOCKER_COMPOSE up -d
+
+          # 9.5. Ejecutar migraciones de base de datos
+          echo "🗄️ Ejecutando migraciones de base de datos..."
+          sleep 15  # Esperar a que PostgreSQL esté listo
+          
+          # Ejecutar todas las migraciones en orden
+          if [ -d "scripts" ]; then
+            for migration_script in scripts/migrate_*.py; do
+              if [ -f "$migration_script" ]; then
+                echo "  📋 Ejecutando: $migration_script"
+                python "$migration_script" || echo "  ⚠️ Migración ya ejecutada o error (continuando...)"
+              fi
+            done
+            echo "✅ Migraciones completadas"
           else
-              docker-compose down -v || true
-              docker-compose up -d
+            echo "⚠️ No se encontró directorio scripts/"
           fi
 
-          # 7. Limpieza
+          # 10. Verificar que el volumen sigue existiendo
+          echo "✓ Verificando persistencia de volúmenes..."
+          docker volume ls | grep postgres && echo "✓ Volumen de postgres preservado" || echo "❌ ERROR: Volumen eliminado!"
+
+          # 11. Esperar a que PostgreSQL esté listo
+          echo "⏳ Esperando a que PostgreSQL esté listo..."
+          sleep 10
+
+          # 12. Verificar datos en la base de datos
+          echo "📊 Verificando datos en la base de datos..."
+          $DOCKER_COMPOSE exec -T postgres psql -U compra_agil_user -d compra_agil -c \
+            "SELECT 'Licitaciones: ' || COUNT(*)::text FROM licitaciones UNION ALL SELECT 'Histórico: ' || COUNT(*)::text FROM historico_licitaciones;" \
+            2>/dev/null || echo "⚠️ Tablas aún no existen (se crearán automáticamente)"
+
+          # 13. Limpieza de imágenes (NO volúmenes)
+          echo "🧹 Limpiando imágenes antiguas..."
           docker image prune -f

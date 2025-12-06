@@ -61,6 +61,11 @@ services:
 volumes:
   postgres_data:
     driver: local
+    name: compra_agil_postgres_data  # Nombre explícito y consistente
+    labels:
+      com.docker.compose.project: "compra_agil"
+      com.docker.compose.persistent: "true"
+      description: "PostgreSQL data volume - DO NOT DELETE"
 
 networks:
   default:
