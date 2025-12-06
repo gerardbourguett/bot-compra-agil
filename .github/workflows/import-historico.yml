@@ -17,6 +17,7 @@ on:
 jobs:
   import:
     runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2 horas máximo
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
@@ -29,16 +30,97 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          echo "📦 Instalando dependencias..."
+          pip install -r requirements.txt
+          echo "✓ Dependencias instaladas"
+
+      - name: Validar variables de entorno
+        run: |
+          echo "🔍 Validando configuración..."
+          if [ -z "$DATABASE_URL" ]; then
+            echo "❌ ERROR: DATABASE_URL no está configurada"
+            exit 1
+          fi
+          echo "✓ DATABASE_URL configurada"
+          echo "✓ Variables de entorno validadas"
+
+      - name: Verificar conexión a base de datos
+        run: |
+          echo "🔗 Verificando conexión a PostgreSQL..."
+          python -c "
+          import os
+          import psycopg2
+          try:
+              conn = psycopg2.connect(os.environ['DATABASE_URL'])
+              cursor = conn.cursor()
+              cursor.execute('SELECT version();')
+              version = cursor.fetchone()[0]
+              print(f'✓ Conexión exitosa a PostgreSQL')
+              print(f'  Versión: {version}')
+              conn.close()
+          except Exception as e:
+              print(f'❌ Error de conexión: {e}')
+              exit(1)
+          "
+
+      - name: Mostrar información del archivo (scheduled)
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          echo "📅 Importación programada - Mes anterior"
+          MONTH=$(python -c "from datetime import datetime, timedelta; prev = (datetime.utcnow().replace(day=1) - timedelta(days=1)); print(f'{prev.year}-{prev.month:02d}')")
+          URL="https://transparenciachc.blob.core.windows.net/trnspchc/COT_${MONTH}.zip"
+          echo "  Mes: $MONTH"
+          echo "  URL: $URL"
+
+      - name: Mostrar información del archivo (manual)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "🎯 Importación manual"
+          if [ -n "${{ inputs.month }}" ]; then
+            echo "  Mes especificado: ${{ inputs.month }}"
+            URL="https://transparenciachc.blob.core.windows.net/trnspchc/COT_${{ inputs.month }}.zip"
+          else
+            MONTH=$(python -c "from datetime import datetime, timedelta; prev = (datetime.utcnow().replace(day=1) - timedelta(days=1)); print(f'{prev.year}-{prev.month:02d}')")
+            echo "  Mes (por defecto): $MONTH"
+            URL="https://transparenciachc.blob.core.windows.net/trnspchc/COT_${MONTH}.zip"
+          fi
+          echo "  URL: $URL"
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "  ⚠️  Modo forzado: Se importará aunque existan datos"
+          fi
 
       - name: Import last month
         if: ${{ github.event_name == 'schedule' }}
         run: |
-          python src/run_monthly_import.py
+          echo "🚀 Inicio de importación automática"
+          echo "=================================================="
+          cd src
+          python run_monthly_import.py
+          echo "=================================================="
 
       - name: Import specified month
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
+          echo "🚀 Inicio de importación manual"
+          echo "=================================================="
           FORCE_FLAG=""
           if [ "${{ inputs.force }}" = "true" ]; then FORCE_FLAG="--force"; fi
-          python src/run_monthly_import.py --month "${{ inputs.month }}" $FORCE_FLAG
+          cd src
+          python run_monthly_import.py --month "${{ inputs.month }}" $FORCE_FLAG
+          echo "=================================================="
+
+      - name: Resumen de ejecución
+        if: always()
+        run: |
+          echo ""
+          echo "📊 RESUMEN DE EJECUCIÓN"
+          echo "=================================================="
+          echo "Estado del job: ${{ job.status }}"
+          echo "Tipo de ejecución: ${{ github.event_name }}"
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Importación completada exitosamente"
+          else
+            echo "❌ La importación falló - Revisar logs arriba"
+          fi
+          echo "=================================================="
