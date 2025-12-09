@@ -1,5 +1,6 @@
 """
 Módulo de integración con Gemini AI para análisis de licitaciones.
+NUEVO: Integración con sistema RAG y recomendación de precios ML
 """
 import google.generativeai as genai
 import os
@@ -17,17 +18,19 @@ if GEMINI_API_KEY:
 MODEL_NAME = "gemini-2.0-flash-exp"
 
 
-def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=None):
+def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=None, usar_historicos=True):
     """
     Realiza un análisis completo de una licitación usando Gemini AI.
+    MEJORADO: Ahora incluye datos históricos reales (RAG) y recomendaciones ML.
     
     Args:
         licitacion: Dict con datos de la licitación
         perfil_empresa: Dict con perfil de la empresa
         productos_detalle: Lista de productos solicitados (opcional)
+        usar_historicos: Si True, enriquece con datos históricos (RAG)
     
     Returns:
-        dict con el análisis completo
+        dict con el análisis completo + datos históricos
     """
     
     # Construir lista de productos si existe
@@ -36,7 +39,54 @@ def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=N
         productos_lineas = [f"- {p.get('nombre')}: {p.get('cantidad')} {p.get('unidad_medida')}" for p in productos_detalle]
         productos_texto = "PRODUCTOS SOLICITADOS:\n" + "\n".join(productos_lineas)
     
-    # Construir prompt
+    # ========== NUEVO: INTEGRACIÓN CON SISTEMA RAG ==========
+    contexto_historico = ""
+    insights_historicos = ""
+    recomendacion_precio_ml = None
+    
+    if usar_historicos:
+        try:
+            # Importar módulos ML (lazy import para evitar errores si no están disponibles)
+            from rag_historico import enriquecer_analisis_licitacion
+            from ml_precio_optimo import calcular_precio_optimo
+            
+            # Buscar casos históricos similares
+            print("🔍 Buscando casos históricos similares...")
+            datos_rag = enriquecer_analisis_licitacion(
+                nombre_licitacion=licitacion.get('nombre', ''),
+                monto_estimado=licitacion.get('monto_disponible'),
+                descripcion=productos_texto
+            )
+            
+            if datos_rag.get('tiene_datos'):
+                contexto_historico = datos_rag['contexto_para_prompt']
+                insights_historicos = datos_rag['insights']
+                print(f"✅ Encontrados {datos_rag['n_casos_encontrados']} casos históricos")
+            
+            # Calcular precio óptimo si hay productos
+            if productos_detalle and len(productos_detalle) > 0:
+                producto_principal = productos_detalle[0].get('nombre', '')
+                cantidad = productos_detalle[0].get('cantidad', 1)
+                
+                if producto_principal:
+                    print(f"💰 Calculando precio óptimo para '{producto_principal}'...")
+                    recomendacion_precio_ml = calcular_precio_optimo(
+                        producto=producto_principal,
+                        cantidad=cantidad,
+                        solo_ganadores=True
+                    )
+                    
+                    if recomendacion_precio_ml.get('success'):
+                        print(f"✅ Precio recomendado: ${recomendacion_precio_ml['precio_total']['recomendado']:,}")
+        
+        except ImportError as e:
+            print(f"⚠️ Módulos ML no disponibles: {e}")
+        except Exception as e:
+            print(f"⚠️ Error al obtener datos históricos: {e}")
+    
+    # ========== FIN INTEGRACIÓN RAG ==========
+    
+    # Construir prompt enriquecido
     prompt = f"""Eres un experto en licitaciones públicas de Chile, especializado en Compra Ágil. 
 Analiza la siguiente licitación para ayudar a una PYME a decidir si participar y cómo ganar.
 
@@ -64,6 +114,37 @@ LICITACIÓN:
 
 {productos_texto}
 
+{"=" * 60}
+ANÁLISIS BASADO EN DATOS HISTÓRICOS REALES:
+{"=" * 60}
+
+{insights_historicos if insights_historicos else "No hay datos históricos disponibles para esta licitación."}
+
+{contexto_historico}
+
+{"=" * 60}
+RECOMENDACIÓN DE PRECIO (ML):
+{"=" * 60}
+"""
+
+    # Añadir recomendación de precio ML si existe
+    if recomendacion_precio_ml and recomendacion_precio_ml.get('success'):
+        prompt += f"""
+{recomendacion_precio_ml['recomendacion']}
+
+Estadísticas detalladas:
+- {recomendacion_precio_ml['estadisticas']['n_registros']} licitaciones similares analizadas
+- {recomendacion_precio_ml['estadisticas']['n_ganadores']} ofertas ganadoras
+- Tasa de conversión histórica: {recomendacion_precio_ml['estadisticas']['tasa_conversion']:.1f}%
+
+IMPORTANTE: Usa esta información REAL para fundamentar tu recomendación de precio.
+"""
+    else:
+        prompt += "\nNo hay datos suficientes para calcular precio óptimo con ML.\n"
+
+    prompt +=f"""
+{"=" * 60}
+
 Proporciona un análisis estructurado en formato JSON con los siguientes campos:
 
 {{
@@ -78,7 +159,7 @@ Proporciona un análisis estructurado en formato JSON con los siguientes campos:
     "rango_maximo": <número>,
     "precio_sugerido": <número>,
     "estrategia": "<explicación de la estrategia de precio>",
-    "justificacion": "<por qué este rango>"
+    "justificacion": "<por qué este rango - cita los datos históricos si los usaste>"
   }},
   "analisis_competencia": {{
     "nivel_competencia": "<bajo/medio/alto>",
@@ -95,8 +176,11 @@ Proporciona un análisis estructurado en formato JSON con los siguientes campos:
   "resumen_ejecutivo": "<resumen en 2-3 oraciones sobre si conviene participar y por qué>"
 }}
 
-IMPORTANTE: Responde SOLO con el JSON, sin texto adicional antes o después."""
-
+IMPORTANTE: 
+- Responde SOLO con el JSON, sin texto adicional antes o después.
+- Fundamenta tus recomendaciones en los DATOS HISTÓRICOS REALES proporcionados arriba.
+- Menciona específicamente insights de casos históricos en tu análisis."""
+    
     try:
         model = genai.GenerativeModel(MODEL_NAME)
         response = model.generate_content(prompt)
@@ -113,6 +197,15 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional antes o después."""
             texto_respuesta = texto_respuesta[:-3]
         
         analisis = json.loads(texto_respuesta.strip())
+        
+        # Añadir metadatos sobre datos históricos usados
+        analisis['_metadata'] = {
+            'uso_datos_historicos': usar_historicos,
+            'casos_historicos_encontrados': datos_rag.get('n_casos_encontrados', 0) if usar_historicos and datos_rag.get('tiene_datos') else 0,
+            'precio_ml_calculado': recomendacion_precio_ml is not None and recomendacion_precio_ml.get('success', False),
+            'confianza_precio_ml': recomendacion_precio_ml.get('confianza', 0) if recomendacion_precio_ml else 0
+        }
+        
         return analisis
         
     except Exception as e:
@@ -125,6 +218,7 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional antes o después."""
             "recomendaciones": {"debe_participar": False, "probabilidad_exito": "desconocida"},
             "resumen_ejecutivo": "No se pudo completar el análisis"
         }
+
 
 
 def generar_ayuda_cotizacion(licitacion, perfil_empresa, analisis):
