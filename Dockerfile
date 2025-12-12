@@ -1,36 +1,51 @@
-# Etapa base con dependencias comunes
-FROM python:3.11-slim AS base
+# Dockerfile optimizado para producción con Kubernetes
+FROM python:3.11-slim
 
-# Establecer directorio de trabajo
-WORKDIR /app
+# Metadata
+LABEL maintainer="Gerard Bourguett"
+LABEL description="CompraÁgil API v3.0"
 
-# Variables de entorno para Python
+# Variables de entorno
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Instalar dependencias del sistema
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+# Crear usuario no-root para seguridad
+RUN useradd -m -u 1000 apiuser && \
+    mkdir -p /app /app/logs && \
+    chown -R apiuser:apiuser /app
 
-# Copiar requirements e instalar dependencias
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Directorio de trabajo
+WORKDIR /app
 
-# Copiar código fuente
-COPY src/*.py ./
-COPY .env.example .env.example
+# Copiar requirements primero (cache de Docker)
+COPY --chown=apiuser:apiuser requirements.txt .
 
-# Crear directorio para logs
-RUN mkdir -p /app/logs
+# Instalar dependencias
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir gunicorn uvicorn[standard]
 
-# Etapa para el Bot
-FROM base AS bot
-CMD ["python", "bot_inteligente.py"]
+# Copiar código de la aplicación
+COPY --chown=apiuser:apiuser . .
 
-# Etapa para el Scraper
-FROM base AS scraper
-CMD ["python", "scraper.py"]
+# Cambiar a usuario no-root
+USER apiuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
+
+# Exponer puerto
+EXPOSE 8000
+
+# Comando de inicio
+CMD ["gunicorn", \
+     "-w", "4", \
+     "-k", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--timeout", "120", \
+     "--access-logfile", "/app/logs/access.log", \
+     "--error-logfile", "/app/logs/error.log", \
+     "--log-level", "info", \
+     "api_backend_v3:app"]

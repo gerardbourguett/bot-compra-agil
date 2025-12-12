@@ -1,0 +1,29 @@
+# Kubernetes Ingress - Nginx Ingress Controller
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: compraagil-api-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod  # Para SSL automático
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+spec:
+  tls:
+  - hosts:
+    - api.tudominio.com  # Cambia esto
+    secretName: compraagil-tls
+  rules:
+  - host: api.tudominio.com  # Cambia esto
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: compraagil-api-service
+            port:
+              number: 80

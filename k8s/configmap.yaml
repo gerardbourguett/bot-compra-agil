@@ -1,0 +1,16 @@
+# Kubernetes ConfigMap - Variables de entorno no sensibles
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: compraagil-config
+  namespace: apps
+data:
+  # Redis
+  REDIS_URL: "redis://redis-service.apps:6379/0"
+  
+  # App config
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "info"
+  
+  # CORS (añade tus dominios)
+  ALLOWED_ORIGINS: "https://app.tudominio.com,https://www.tudominio.com"

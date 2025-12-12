@@ -331,11 +331,11 @@ def enriquecer_analisis_licitacion(
         'patrones': patrones,
         'recomendacion_precio': {
             'basado_en_ganadores': True,
-            'precio_promedio': patrones['estadisticas_precio']['promedio'],
-            'precio_mediana': patrones['estadisticas_precio']['mediana'],
-            'rango_min': patrones['estadisticas_precio']['minimo'],
-            'rango_max': patrones['estadisticas_precio']['maximo'],
-        } if patrones['success'] else None
+            'precio_promedio': patrones.get('estadisticas_precio', {}).get('promedio', 0),
+            'precio_mediana': patrones.get('estadisticas_precio', {}).get('mediana', 0),
+            'rango_min': patrones.get('estadisticas_precio', {}).get('minimo', 0),
+            'rango_max': patrones.get('estadisticas_precio', {}).get('maximo', 0),
+        } if patrones.get('success') and patrones.get('n_ganadores', 0) > 0 else None
     }
 
 

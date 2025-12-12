@@ -1,0 +1,104 @@
+name: Deploy API v3 to Vultr VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'api_backend_v3.py'
+      - 'src/**'
+      - 'requirements.txt'
+      - '.github/workflows/deploy.yml'
+
+  workflow_dispatch:  # Permite deploy manual desde GitHub
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run tests
+        run: |
+          python tests/test_ml_system.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+  deploy:
+    name: Deploy to Vultr VPS
+    runs-on: ubuntu-latest
+    needs: test  # Solo deploy si tests pasan
+    
+    steps:
+      - name: 🚀 Deploy via SSH (Password Auth)
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          script: |
+            echo "🚀 Starting deployment to Vultr VPS..."
+            
+            # Navigate to app directory
+            cd /home/${{ secrets.VPS_USER }}/bot-compra-agil || exit 1
+            
+            # Pull latest code
+            echo "📥 Pulling latest code from main..."
+            git pull origin main
+            
+            # Activate virtual environment
+            echo "🔧 Activating virtual environment..."
+            source .venv/bin/activate
+            
+            # Install/update dependencies
+            echo "📦 Installing dependencies..."
+            pip install -r requirements.txt --quiet
+            
+            # Database migrations (si usas Alembic)
+            # echo "🗄️  Running migrations..."
+            # alembic upgrade head
+            
+            # Restart API service
+            echo "🔄 Restarting API service..."
+            sudo systemctl restart compraagil-api
+            
+            # Wait for service to start
+            echo "⏳ Waiting for service..."
+            sleep 5
+            
+            # Health check
+            echo "🏥 Running health check..."
+            if curl -f http://localhost:8000/health; then
+              echo "✅ Deployment successful!"
+              sudo systemctl status compraagil-api --no-pager
+            else
+              echo "❌ Health check failed!"
+              sudo journalctl -u compraagil-api -n 50 --no-pager
+              exit 1
+            fi
+      
+      - name: 📢 Notify Success
+        if: success()
+        run: |
+          echo "✅ API v3 deployed successfully!"
+          echo "🌐 Available at: https://api.tudominio.com"
+      
+      - name: 📢 Notify Failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check logs above for details"
