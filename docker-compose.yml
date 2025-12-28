@@ -37,6 +37,14 @@ services:
       timeout: 5s
       retries: 5
 
+  # NOTA: Prometheus y Grafana ya están instalados en el servidor host
+  # Los archivos de configuración están en ./monitoring/ para referencia
+  # Para integrar con tus instancias existentes:
+  # 1. Copiar monitoring/prometheus/prometheus.yml a tu config de Prometheus
+  # 2. Copiar monitoring/prometheus/alerts.yml a tu config de Prometheus
+  # 3. Importar dashboards de monitoring/grafana/dashboards/*.json en Grafana
+  # 4. Agregar datasource Prometheus en Grafana apuntando a localhost:9090
+
   # Scraper (ejecuta cada 6 horas)
   scraper:
     image: ghcr.io/${IMAGE_REPO:-gerardbourguett/bot-compra-agil}/scraper:latest
