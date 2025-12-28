@@ -46,10 +46,10 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           BACKUP_FILE="$HOME/backups/compra_agil_backup_${TIMESTAMP}.sql"
 
-          # Ejecutar pg_dump
-          cd ~/app || cd /home/gabc/app || cd /root/app || { echo "❌ No se encuentra el directorio app"; exit 1; }
+          # Ejecutar pg_dump (no necesitamos cd, Docker encuentra los contenedores por nombre)
+          echo "🔄 Ejecutando pg_dump desde contenedor compra_agil_db..."
 
-          if $DOCKER_COMPOSE exec -T postgres pg_dump -U compra_agil_user compra_agil > "$BACKUP_FILE"; then
+          if docker exec -i compra_agil_db pg_dump -U compra_agil_user compra_agil > "$BACKUP_FILE"; then
             BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
             echo "✅ Backup creado: $BACKUP_FILE ($BACKUP_SIZE)"
 
