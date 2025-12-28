@@ -19,6 +19,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis para caché de ML y datos temporales
+  redis:
+    image: redis:7-alpine
+    container_name: compra_agil_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"  # Puerto Redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Scraper (ejecuta cada 6 horas)
   scraper:
     image: ghcr.io/${IMAGE_REPO:-gerardbourguett/bot-compra-agil}/scraper:latest
@@ -30,11 +48,29 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://compra_agil_user:${POSTGRES_PASSWORD:-changeme123}@postgres:5432/compra_agil
+      - REDIS_URL=redis://redis:6379/0
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - ./logs:/app/logs
+    ports:
+      - "8002:8000"  # Métricas Prometheus (8002 en host para evitar conflicto con bot)
+    networks:
+      - default
+    labels:
+      # Prometheus scraping
+      - "prometheus.scrape=true"
+      - "prometheus.port=8000"
+      - "prometheus.path=/metrics"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     command: python src/scheduler.py
 
   # Bot de Telegram
@@ -48,12 +84,30 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://compra_agil_user:${POSTGRES_PASSWORD:-changeme123}@postgres:5432/compra_agil
+      - REDIS_URL=redis://redis:6379/0
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - ./logs:/app/logs
+    ports:
+      - "8001:8000"  # Métricas Prometheus (8001 en host para evitar conflicto con scraper)
+    networks:
+      - default
+    labels:
+      # Prometheus scraping
+      - "prometheus.scrape=true"
+      - "prometheus.port=8000"
+      - "prometheus.path=/metrics"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     command: python src/bot_inteligente.py
 
 volumes:
@@ -64,6 +118,14 @@ volumes:
       com.docker.compose.project: "compra_agil"
       com.docker.compose.persistent: "true"
       description: "PostgreSQL data volume - DO NOT DELETE"
+
+  redis_data:
+    driver: local
+    name: compra_agil_redis_data
+    labels:
+      com.docker.compose.project: "compra_agil"
+      com.docker.compose.persistent: "true"
+      description: "Redis cache data - Safe to delete if needed"
 
 networks:
   default:

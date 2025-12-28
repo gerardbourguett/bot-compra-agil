@@ -18,16 +18,39 @@ def crear_indices_optimizados():
     print("=" * 80)
     print()
     
+    # Habilitar extensiones necesarias primero
+    print("Habilitando extensiones de PostgreSQL...")
+    try:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+        conn.commit()
+        print("✅ Extensiones habilitadas: pg_trgm, pg_stat_statements\n")
+    except Exception as e:
+        print(f"⚠️  Error habilitando extensiones: {e}\n")
+
     indices = [
         # ========== HISTÓRICO_LICITACIONES (10.6M registros) ==========
-        # Índices para búsquedas de texto (ML/RAG)
+        # Índices GIN para fuzzy matching (RAG/ML)
+        ("idx_hist_producto_trgm", """
+            CREATE INDEX IF NOT EXISTS idx_hist_producto_trgm
+            ON historico_licitaciones
+            USING gin(producto_cotizado gin_trgm_ops)
+        """, "GIN Trigram: producto (fuzzy matching para RAG)"),
+
+        ("idx_hist_nombre_trgm", """
+            CREATE INDEX IF NOT EXISTS idx_hist_nombre_trgm
+            ON historico_licitaciones
+            USING gin(nombre_cotizacion gin_trgm_ops)
+        """, "GIN Trigram: nombre (fuzzy matching para búsquedas)"),
+
+        # Índices para búsquedas de texto (case-insensitive - legacy)
         ("idx_hist_nombre_lower", """
-            CREATE INDEX IF NOT EXISTS idx_hist_nombre_lower 
+            CREATE INDEX IF NOT EXISTS idx_hist_nombre_lower
             ON historico_licitaciones(LOWER(nombre_cotizacion))
         """, "Texto nombre (case-insensitive)"),
-        
+
         ("idx_hist_producto_lower", """
-            CREATE INDEX IF NOT EXISTS idx_hist_producto_lower 
+            CREATE INDEX IF NOT EXISTS idx_hist_producto_lower
             ON historico_licitaciones(LOWER(producto_cotizado))
         """, "Texto producto (case-insensitive)"),
         
@@ -55,10 +78,24 @@ def crear_indices_optimizados():
         
         # Índice compuesto para queries de RAG
         ("idx_hist_rag_composite", """
-            CREATE INDEX IF NOT EXISTS idx_hist_rag_composite 
+            CREATE INDEX IF NOT EXISTS idx_hist_rag_composite
             ON historico_licitaciones(es_ganador, fecha_cierre DESC, monto_total)
         WHERE monto_total > 0 AND nombre_cotizacion IS NOT NULL
         """, "Compuesto RAG (ganador, fecha, monto)"),
+
+        # Índice compuesto para precio óptimo (ML)
+        ("idx_hist_precio_optimo", """
+            CREATE INDEX IF NOT EXISTS idx_hist_precio_optimo
+            ON historico_licitaciones(producto_cotizado, es_ganador, monto_total, cantidad, fecha_cierre DESC)
+        WHERE monto_total > 0 AND es_ganador = true
+        """, "Compuesto precio óptimo (producto, ganador, monto, cantidad, fecha)"),
+
+        # Índice para análisis temporal
+        ("idx_hist_fecha_producto", """
+            CREATE INDEX IF NOT EXISTS idx_hist_fecha_producto
+            ON historico_licitaciones(fecha_cierre DESC, producto_cotizado)
+        WHERE fecha_cierre >= '2020-01-01'
+        """, "Fecha + producto (análisis temporal reciente)"),
         
         # ========== LICITACIONES (26K registros) ==========
         ("idx_lic_estado_fecha", """

@@ -52,12 +52,44 @@ def buscar_casos_similares(
             WHERE nombre_cotizacion IS NOT NULL
             AND monto_total > 0
             ORDER BY fecha_cierre DESC
-            LIMIT 5000
+            LIMIT 1000
         """
-        
-        df = pd.read_sql(query, conn)
+
+        # Optimización PostgreSQL con pg_trgm
+        if db.USE_POSTGRES:
+            query = """
+                SELECT
+                    codigo_licitacion,
+                    nombre_cotizacion,
+                    producto_cotizado,
+                    region,
+                    rut_proveedor,
+                    nombre_proveedor,
+                    monto_total,
+                    cantidad,
+                    detalle_oferta,
+                    es_ganador,
+                    fecha_cierre,
+                    GREATEST(
+                        similarity(nombre_cotizacion, %s),
+                        similarity(COALESCE(producto_cotizado, ''), %s)
+                    ) as score_similitud
+                FROM historico_licitaciones
+                WHERE (nombre_cotizacion %% %s OR producto_cotizado %% %s)
+                AND nombre_cotizacion IS NOT NULL
+                AND monto_total > 0
+                AND fecha_cierre >= CURRENT_DATE - INTERVAL '3 years'
+                ORDER BY score_similitud DESC, fecha_cierre DESC
+                LIMIT %s
+            """
+            params = (nombre_licitacion, nombre_licitacion, nombre_licitacion,
+                     nombre_licitacion, top_k * 3)
+            df = pd.read_sql(query, conn, params=params)
+        else:
+            df = pd.read_sql(query, conn)
+
         conn.close()
-        
+
         if df.empty:
             logger.warning("No se encontraron datos históricos")
             return []
