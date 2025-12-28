@@ -8,6 +8,7 @@ Para ejecutar:
 """
 import os
 import logging
+import asyncio
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -20,6 +21,7 @@ import database_extended as db
 import database_bot as db_bot
 import ml_utils
 import reportes
+import metrics_server
 
 # Importar funciones de las partes del bot
 from bot_inteligente_parte1 import (
@@ -50,12 +52,9 @@ load_dotenv()
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# Configurar logs
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# Configurar logging estructurado
+import logger_config
+logger = logger_config.setup_logging(service='telegram_bot', level=logging.INFO)
 
 
 def main():
@@ -163,17 +162,34 @@ def main():
     # Handler genérico de botones (para analizar, guardar, ayuda)
     application.add_handler(CallbackQueryHandler(button_handler))
     
-    # Iniciar bot
+    # Iniciar servidor de métricas
     print("\n" + "="*60)
     print("🤖 BOT INTELIGENTE DE COMPRA ÁGIL")
     print("="*60)
     print(f"✅ Bot iniciado correctamente")
     print(f"✅ Base de datos: Configurada")
     print(f"{'✅' if GEMINI_API_KEY else '❌'} Gemini AI: {'Configurado' if GEMINI_API_KEY else 'No configurado'}")
+
+    # Iniciar servidor de métricas en background
+    try:
+        import threading
+        def run_metrics_server():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(metrics_server.start_metrics_server(port=8000))
+            loop.run_forever()
+
+        metrics_thread = threading.Thread(target=run_metrics_server, daemon=True)
+        metrics_thread.start()
+        print(f"✅ Servidor de métricas: http://0.0.0.0:8000/metrics")
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo iniciar servidor de métricas: {e}")
+        print(f"⚠️ Servidor de métricas: No disponible")
+
     print(f"\n📱 El bot está escuchando mensajes...")
     print(f"💡 Presiona Ctrl+C para detener\n")
     print("="*60 + "\n")
-    
+
     # Ejecutar bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 

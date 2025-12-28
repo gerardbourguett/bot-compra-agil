@@ -91,25 +91,44 @@ jobs:
           echo "📊 Verificando volúmenes antes del despliegue..."
           docker volume ls | grep postgres || echo "No hay volumen de postgres aún"
 
-          # 7. Crear backup automático de BD (si existe)
+          # 7. Crear backup automático de BD (OBLIGATORIO si existe)
           echo "💾 Creando backup de seguridad..."
           mkdir -p backups
           BACKUP_FILE="backups/backup_$(date +%Y%m%d_%H%M%S).sql"
-          
+
           # Detectar qué comando de docker-compose usar
           if docker compose version >/dev/null 2>&1; then
               DOCKER_COMPOSE="docker compose"
           else
               DOCKER_COMPOSE="docker-compose"
           fi
-          
-          # Intentar backup si la BD existe
-          $DOCKER_COMPOSE exec -T postgres pg_dump -U compra_agil_user compra_agil > "$BACKUP_FILE" 2>/dev/null && \
-            echo "✓ Backup creado: $BACKUP_FILE" || \
+
+          # Verificar si la BD existe
+          if docker ps --format '{{.Names}}' | grep -q compra_agil_db; then
+            echo "✓ BD detectada, creando backup OBLIGATORIO..."
+
+            # Intentar backup - SI FALLA, DETENER TODO
+            if $DOCKER_COMPOSE exec -T postgres pg_dump -U compra_agil_user compra_agil > "$BACKUP_FILE" 2>/dev/null; then
+              BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+              echo "✅ Backup creado exitosamente: $BACKUP_FILE ($BACKUP_SIZE)"
+
+              # Verificar que el backup no esté vacío
+              if [ ! -s "$BACKUP_FILE" ]; then
+                echo "❌ ERROR CRÍTICO: Backup creado pero está vacío!"
+                exit 1
+              fi
+            else
+              echo "❌ ERROR CRÍTICO: No se pudo crear el backup de la base de datos!"
+              echo "🛑 Deteniendo deploy para prevenir pérdida de datos"
+              exit 1
+            fi
+          else
             echo "⚠️ No hay BD existente para backup (normal en primer despliegue)"
-          
-          # Mantener solo los últimos 7 backups
-          ls -t backups/backup_*.sql 2>/dev/null | tail -n +8 | xargs -r rm || true
+          fi
+
+          # Mantener solo los últimos 10 backups locales
+          ls -t backups/backup_*.sql 2>/dev/null | tail -n +11 | xargs -r rm || true
+          echo "📦 Backups locales: $(ls -1 backups/backup_*.sql 2>/dev/null | wc -l)"
 
           # 8. Limpiar contenedores antiguos (para evitar conflictos de nombres)
           echo "🧹 Limpiando contenedores antiguos..."

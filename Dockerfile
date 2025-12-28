@@ -7,6 +7,12 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Instalar wget para healthchecks y limpiar cache
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Crear usuario no-root para seguridad
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /app /app/logs /app/src && \

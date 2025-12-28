@@ -35,6 +35,21 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - ./logs:/app/logs
+    ports:
+      - "8002:8000"  # Métricas Prometheus (8002 en host para evitar conflicto con bot)
+    networks:
+      - default
+    labels:
+      # Prometheus scraping
+      - "prometheus.scrape=true"
+      - "prometheus.port=8000"
+      - "prometheus.path=/metrics"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     command: python src/scheduler.py
 
   # Bot de Telegram
@@ -54,6 +69,21 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - ./logs:/app/logs
+    ports:
+      - "8001:8000"  # Métricas Prometheus (8001 en host para evitar conflicto con scraper)
+    networks:
+      - default
+    labels:
+      # Prometheus scraping
+      - "prometheus.scrape=true"
+      - "prometheus.port=8000"
+      - "prometheus.path=/metrics"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     command: python src/bot_inteligente.py
 
 volumes:

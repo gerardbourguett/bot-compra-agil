@@ -1,0 +1,120 @@
+name: Database Backup to GitHub Artifacts
+
+on:
+  # Backup manual
+  workflow_dispatch:
+
+  # Backup automático diario a las 3 AM UTC (00:00 Chile)
+  schedule:
+    - cron: '0 3 * * *'
+
+  # Backup después de cada deploy exitoso
+  workflow_run:
+    workflows: ["CI/CD Pipeline"]
+    types:
+      - completed
+
+jobs:
+  backup-database:
+    runs-on: self-hosted
+    # Solo ejecutar si el workflow de CI/CD fue exitoso (o si es manual/schedule)
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Crear backup de PostgreSQL
+        id: backup
+        run: |
+          echo "💾 Iniciando backup de base de datos..."
+
+          # Crear directorio de backups
+          mkdir -p ~/backups
+
+          # Detectar comando de docker-compose
+          if docker compose version >/dev/null 2>&1; then
+              DOCKER_COMPOSE="docker compose"
+          else
+              DOCKER_COMPOSE="docker-compose"
+          fi
+
+          # Verificar que la BD está corriendo
+          if ! docker ps --format '{{.Names}}' | grep -q compra_agil_db; then
+            echo "⚠️ Base de datos no está corriendo, no se puede crear backup"
+            exit 1
+          fi
+
+          # Crear backup con timestamp
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          BACKUP_FILE="$HOME/backups/compra_agil_backup_${TIMESTAMP}.sql"
+
+          # Ejecutar pg_dump
+          cd ~/app || cd /home/gabc/app || cd /root/app || { echo "❌ No se encuentra el directorio app"; exit 1; }
+
+          if $DOCKER_COMPOSE exec -T postgres pg_dump -U compra_agil_user compra_agil > "$BACKUP_FILE"; then
+            BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+            echo "✅ Backup creado: $BACKUP_FILE ($BACKUP_SIZE)"
+
+            # Verificar que no esté vacío
+            if [ ! -s "$BACKUP_FILE" ]; then
+              echo "❌ ERROR: Backup está vacío!"
+              exit 1
+            fi
+
+            # Contar filas en el backup (aproximado)
+            ROW_COUNT=$(grep -c "COPY " "$BACKUP_FILE" || echo "0")
+            echo "📊 Tablas con datos: $ROW_COUNT"
+
+            # Exportar variables para el siguiente step
+            echo "backup_file=$BACKUP_FILE" >> $GITHUB_OUTPUT
+            echo "backup_size=$BACKUP_SIZE" >> $GITHUB_OUTPUT
+            echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          else
+            echo "❌ ERROR: Falló el backup de la base de datos"
+            exit 1
+          fi
+
+      - name: Comprimir backup
+        id: compress
+        run: |
+          echo "🗜️ Comprimiendo backup..."
+          BACKUP_FILE="${{ steps.backup.outputs.backup_file }}"
+          COMPRESSED_FILE="${BACKUP_FILE}.gz"
+
+          gzip -c "$BACKUP_FILE" > "$COMPRESSED_FILE"
+
+          ORIGINAL_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+          COMPRESSED_SIZE=$(du -h "$COMPRESSED_FILE" | cut -f1)
+
+          echo "✅ Backup comprimido:"
+          echo "   Original: $ORIGINAL_SIZE"
+          echo "   Comprimido: $COMPRESSED_SIZE"
+
+          echo "compressed_file=$COMPRESSED_FILE" >> $GITHUB_OUTPUT
+
+      - name: Subir a GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup-${{ steps.backup.outputs.timestamp }}
+          path: ${{ steps.compress.outputs.compressed_file }}
+          retention-days: 30  # Mantener backups por 30 días
+          compression-level: 0  # Ya está comprimido con gzip
+
+      - name: Limpiar backups antiguos locales
+        run: |
+          echo "🧹 Limpiando backups locales antiguos (>7 días)..."
+          find ~/backups -name "compra_agil_backup_*.sql*" -type f -mtime +7 -delete || true
+
+          echo "📦 Backups locales restantes:"
+          ls -lh ~/backups/compra_agil_backup_*.sql* 2>/dev/null | tail -5 || echo "No hay backups"
+
+      - name: Resumen del backup
+        if: always()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 RESUMEN DEL BACKUP"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "⏰ Timestamp: ${{ steps.backup.outputs.timestamp }}"
+          echo "📦 Tamaño original: ${{ steps.backup.outputs.backup_size }}"
+          echo "🗜️ Tamaño comprimido: $(du -h ${{ steps.compress.outputs.compressed_file }} | cut -f1)"
+          echo "☁️ Subido a GitHub Artifacts"
+          echo "⏳ Retención: 30 días"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

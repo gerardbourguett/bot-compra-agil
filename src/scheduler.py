@@ -6,14 +6,13 @@ import time
 import subprocess
 import threading
 import logging
+import asyncio
 from datetime import datetime
+import metrics_server
+import logger_config
 
-# Configurar logs
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# Configurar logging estructurado
+logger = logger_config.setup_logging(service='scraper', level=logging.INFO)
 
 def run_scraper_lista():
     """Ejecuta el scraper de listado (rápido)"""
@@ -58,11 +57,25 @@ if __name__ == "__main__":
     logger.info("📅 Tareas programadas:")
     logger.info("   - Scraper Lista: Cada 60 min")
     logger.info("   - Scraper Detalles: Cada 120 min")
-    
+
+    # Iniciar servidor de métricas en background
+    try:
+        def run_metrics_server():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(metrics_server.start_metrics_server(port=8000))
+            loop.run_forever()
+
+        metrics_thread = threading.Thread(target=run_metrics_server, daemon=True)
+        metrics_thread.start()
+        logger.info("✅ Servidor de métricas: http://0.0.0.0:8000/metrics")
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo iniciar servidor de métricas: {e}")
+
     # Ejecutar inmediatamente al inicio
     run_threaded(run_scraper_lista)
     run_threaded(run_scraper_detalles)
-    
+
     while True:
         schedule.run_pending()
         time.sleep(1)
