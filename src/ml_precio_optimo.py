@@ -20,59 +20,94 @@ def buscar_productos_similares(
     umbral_similitud: int = 60
 ) -> pd.DataFrame:
     """
-    Busca productos similares en el histórico usando fuzzy matching.
-    
+    Busca productos similares en el histórico usando fuzzy matching optimizado.
+
     Args:
         producto: Nombre del producto a buscar
         region: Filtrar por región específica (opcional)
         limite: Máximo de registros a retornar
         umbral_similitud: Umbral mínimo de similitud (0-100)
-    
+
     Returns:
         DataFrame con productos similares y sus datos
     """
     try:
         conn = db.get_connection()
-        
-        # Query base
-        query = """
-            SELECT 
-                producto_cotizado,
-                monto_total,
-                cantidad,
-                region,
-                es_ganador,
-                fecha_cierre,
-                nombre_proveedor
-            FROM historico_licitaciones
-            WHERE monto_total > 0 
-            AND cantidad > 0
-        """
-        
-        params = []
-        
-        # Filtro por región si se especifica
-        if region:
-            if db.USE_POSTGRES:
-                query += " AND UPPER(region) = UPPER(%s)"
-            else:
-                query += " AND UPPER(region) = UPPER(?)"
-            params.append(region)
-        
-        # Ordenar por fecha reciente y limitar
-        query += " ORDER BY fecha_cierre DESC"
-        
+
         if db.USE_POSTGRES:
-            query += f" LIMIT {limite * 3}"  # Traer más para filtrar después
-        else:
-            query += f" LIMIT {limite * 3}"
-        
-        # Ejecutar query
-        if params:
+            # ✅ QUERY OPTIMIZADA con pg_trgm y índices
+            # Usa el índice idx_hist_producto_trgm para fuzzy matching
+            # Filtra por fecha reciente (últimos 2 años) usando idx_hist_fecha_producto
+            # Filtra solo ganadores con monto > 0 usando idx_hist_precio_optimo
+            query = """
+                SELECT
+                    producto_cotizado,
+                    monto_total,
+                    cantidad,
+                    region,
+                    es_ganador,
+                    fecha_cierre,
+                    nombre_proveedor,
+                    similarity(producto_cotizado, %s) as similitud
+                FROM historico_licitaciones
+                WHERE producto_cotizado %% %s  -- Operador de similitud (usa idx_hist_producto_trgm)
+                AND monto_total > 0
+                AND cantidad > 0
+                AND fecha_cierre >= CURRENT_DATE - INTERVAL '2 years'  -- Solo últimos 2 años
+                AND es_ganador = true  -- Solo ofertas ganadoras
+            """
+
+            params = [producto, producto]
+
+            # Filtro por región si se especifica
+            if region:
+                query += " AND UPPER(region) = UPPER(%s)"
+                params.append(region)
+
+            # Ordenar por similitud y fecha (usa índices)
+            query += """
+                ORDER BY similitud DESC, fecha_cierre DESC
+                LIMIT %s
+            """
+            params.append(limite)
+
+            # Ejecutar query
             df = pd.read_sql(query, conn, params=tuple(params))
+
         else:
-            df = pd.read_sql(query, conn)
-        
+            # SQLite fallback (sin pg_trgm)
+            query = """
+                SELECT
+                    producto_cotizado,
+                    monto_total,
+                    cantidad,
+                    region,
+                    es_ganador,
+                    fecha_cierre,
+                    nombre_proveedor
+                FROM historico_licitaciones
+                WHERE monto_total > 0
+                AND cantidad > 0
+                AND fecha_cierre >= date('now', '-2 years')
+                AND es_ganador = 1
+            """
+
+            params = []
+
+            # Filtro por región si se especifica
+            if region:
+                query += " AND UPPER(region) = UPPER(?)"
+                params.append(region)
+
+            # Ordenar por fecha reciente y limitar
+            query += f" ORDER BY fecha_cierre DESC LIMIT {limite * 3}"
+
+            # Ejecutar query
+            if params:
+                df = pd.read_sql(query, conn, params=tuple(params))
+            else:
+                df = pd.read_sql(query, conn)
+
         conn.close()
         
         if df.empty:

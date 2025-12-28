@@ -144,7 +144,7 @@ jobs:
           # 9.5. Ejecutar migraciones de base de datos
           echo "🗄️ Ejecutando migraciones de base de datos..."
           sleep 15  # Esperar a que PostgreSQL esté listo
-          
+
           # Ejecutar todas las migraciones en orden
           if [ -d "scripts" ]; then
             for migration_script in scripts/migrate_*.py; do
@@ -156,6 +156,15 @@ jobs:
             echo "✅ Migraciones completadas"
           else
             echo "⚠️ No se encontró directorio scripts/"
+          fi
+
+          # 9.6. Crear/actualizar índices optimizados
+          echo "📇 Creando índices optimizados..."
+          if [ -f "scripts/create_indexes.py" ]; then
+            python scripts/create_indexes.py || echo "  ⚠️ Error creando índices (continuando...)"
+            echo "✅ Índices optimizados creados/verificados"
+          else
+            echo "⚠️ No se encontró scripts/create_indexes.py"
           fi
 
           # 10. Verificar que el volumen sigue existiendo

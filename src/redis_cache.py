@@ -25,16 +25,33 @@ except Exception as e:
     REDIS_AVAILABLE = False
     print(f"⚠️ Redis no disponible: {e}")
 
-# TTLs configurados
+# TTLs configurados por tipo de dato
 CACHE_TTL = {
+    # Stats y dashboards
     'stats_general': timedelta(hours=1),      # Stats generales: 1 hora
     'stats_region': timedelta(minutes=30),     # Stats por región: 30 min
     'stats_organismo': timedelta(minutes=30),  # Stats por organismo: 30 min
+
+    # Licitaciones
     'licitacion': timedelta(minutes=15),       # Detalle de licitación: 15 min
-    'productos': timedelta(minutes=15),         # Productos: 15 min
+    'licitacion_list': timedelta(minutes=10),  # Listados: 10 min (cambian rápido)
+    'productos': timedelta(minutes=15),        # Productos: 15 min
+
+    # Búsquedas históricas
     'historico_search': timedelta(minutes=30),  # Búsqueda histórica: 30 min
+    'rag_search': timedelta(hours=1),          # RAG (más estable): 1 hora
+
+    # Machine Learning (más costosos, TTL más largo)
     'ml_precio': timedelta(hours=2),           # ML precio óptimo: 2 horas
     'ml_competencia': timedelta(hours=1),      # ML competencia: 1 hora
+    'ml_scoring': timedelta(hours=2),          # ML scoring: 2 horas
+    'ml_rag': timedelta(hours=1),              # ML RAG: 1 hora
+
+    # Embeddings y vectores (muy costosos, TTL largo)
+    'embeddings': timedelta(days=1),           # Embeddings: 24 horas
+
+    # Default
+    'default': timedelta(minutes=15),          # Default: 15 min
 }
 
 def get_cache_key(prefix: str, *args, **kwargs) -> str:
@@ -59,14 +76,35 @@ def get_cache_key(prefix: str, *args, **kwargs) -> str:
     
     return ":".join(parts)
 
+# Métricas de caché (importar metrics_server si está disponible)
+try:
+    from metrics_server import cache_operations
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    cache_operations = None
+
+
+def _track_cache_hit():
+    """Track cache hit en métricas de Prometheus"""
+    if METRICS_AVAILABLE and cache_operations:
+        cache_operations.labels(result='hit').inc()
+
+
+def _track_cache_miss():
+    """Track cache miss en métricas de Prometheus"""
+    if METRICS_AVAILABLE and cache_operations:
+        cache_operations.labels(result='miss').inc()
+
+
 def cache_response(
     prefix: str,
     ttl: Optional[timedelta] = None,
     enabled: bool = True
 ):
     """
-    Decorator para cachear respuestas de funciones
-    
+    Decorator para cachear respuestas de funciones ASYNC
+
     Usage:
         @cache_response('stats_general', ttl=CACHE_TTL['stats_general'])
         async def get_stats():
@@ -78,36 +116,93 @@ def cache_response(
             # Si Redis no está disponible o cache deshabilitado, ejecutar directamente
             if not REDIS_AVAILABLE or not enabled:
                 return await func(*args, **kwargs)
-            
+
             # Generar key de cache
             cache_key = get_cache_key(prefix, *args, **kwargs)
-            
+
             # Intentar obtener del cache
             try:
                 cached = redis_client.get(cache_key)
                 if cached:
                     print(f"📦 Cache HIT: {cache_key}")
+                    _track_cache_hit()
                     return json.loads(cached)
             except Exception as e:
                 print(f"⚠️ Error leyendo cache: {e}")
-            
+
             # Cache miss - ejecutar función
             print(f"🔄 Cache MISS: {cache_key}")
+            _track_cache_miss()
             result = await func(*args, **kwargs)
-            
+
             # Guardar en cache
             try:
                 redis_client.setex(
                     cache_key,
-                    ttl or timedelta(minutes=15),
+                    ttl or CACHE_TTL.get('default', timedelta(minutes=15)),
                     json.dumps(result, default=str)
                 )
                 print(f"💾 Guardado en cache: {cache_key}")
             except Exception as e:
                 print(f"⚠️  Error guardando cache: {e}")
-            
+
             return result
-        
+
+        return wrapper
+    return decorator
+
+
+def cache_response_sync(
+    prefix: str,
+    ttl: Optional[timedelta] = None,
+    enabled: bool = True
+):
+    """
+    Decorator para cachear respuestas de funciones SÍNCRONAS
+
+    Usage:
+        @cache_response_sync('ml_precio', ttl=CACHE_TTL['ml_precio'])
+        def calcular_precio_optimo(producto):
+            return {"precio": ...}
+    """
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Si Redis no está disponible o cache deshabilitado, ejecutar directamente
+            if not REDIS_AVAILABLE or not enabled:
+                return func(*args, **kwargs)
+
+            # Generar key de cache
+            cache_key = get_cache_key(prefix, *args, **kwargs)
+
+            # Intentar obtener del cache
+            try:
+                cached = redis_client.get(cache_key)
+                if cached:
+                    print(f"📦 Cache HIT: {cache_key}")
+                    _track_cache_hit()
+                    return json.loads(cached)
+            except Exception as e:
+                print(f"⚠️ Error leyendo cache: {e}")
+
+            # Cache miss - ejecutar función
+            print(f"🔄 Cache MISS: {cache_key}")
+            _track_cache_miss()
+            result = func(*args, **kwargs)
+
+            # Guardar en cache
+            try:
+                redis_client.setex(
+                    cache_key,
+                    ttl or CACHE_TTL.get('default', timedelta(minutes=15)),
+                    json.dumps(result, default=str)
+                )
+                print(f"💾 Guardado en cache: {cache_key}")
+            except Exception as e:
+                print(f"⚠️  Error guardando cache: {e}")
+
+            return result
+
         return wrapper
     return decorator
 
