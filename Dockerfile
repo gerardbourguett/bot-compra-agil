@@ -1,9 +1,5 @@
-# Dockerfile optimizado para producción con Kubernetes
-FROM python:3.11-slim
-
-# Metadata
-LABEL maintainer="Gerard Bourguett"
-LABEL description="CompraÁgil API v3.0"
+# Multi-stage Dockerfile para Bot, Scraper y API
+FROM python:3.11-slim AS base
 
 # Variables de entorno
 ENV PYTHONUNBUFFERED=1 \
@@ -12,29 +8,66 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Crear usuario no-root para seguridad
-RUN useradd -m -u 1000 apiuser && \
-    mkdir -p /app /app/logs && \
-    chown -R apiuser:apiuser /app
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app /app/logs /app/src && \
+    chown -R appuser:appuser /app
 
 # Directorio de trabajo
 WORKDIR /app
 
 # Copiar requirements primero (cache de Docker)
-COPY --chown=apiuser:apiuser requirements.txt .
+COPY --chown=appuser:appuser requirements.txt .
 
 # Instalar dependencias
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir gunicorn uvicorn[standard]
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación
-COPY --chown=apiuser:apiuser . .
+COPY --chown=appuser:appuser . .
 
 # Cambiar a usuario no-root
-USER apiuser
+USER appuser
 
-# Health check
+# ============================================
+# Target: Bot de Telegram
+# ============================================
+FROM base AS bot
+
+WORKDIR /app
+
+# Health check para el bot
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD pgrep -f "bot_inteligente.py" || exit 1
+
+# Comando de inicio
+CMD ["python", "src/bot_inteligente.py"]
+
+# ============================================
+# Target: Scraper
+# ============================================
+FROM base AS scraper
+
+WORKDIR /app
+
+# Health check para el scraper
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD pgrep -f "scheduler.py" || exit 1
+
+# Comando de inicio
+CMD ["python", "src/scheduler.py"]
+
+# ============================================
+# Target: API (default)
+# ============================================
+FROM base AS api
+
+WORKDIR /app
+
+# Instalar gunicorn para API
+RUN pip install --no-cache-dir gunicorn uvicorn[standard]
+
+# Health check para API
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=5)" || exit 1
 
 # Exponer puerto
 EXPOSE 8000

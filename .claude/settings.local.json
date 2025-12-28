@@ -1,7 +1,24 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nchore: remove Kubernetes config, keep Docker Compose deployment\n\n- Remove k8s/ directory with all manifests \\(deployment, service, ingress, etc.\\)\n- Remove k8s-deploy.yml and deploy.yml workflows\n- Remove Kubernetes documentation \\(KUBERNETES_SETUP.md, VULTR_K8S_DEPLOY.md, VULTR_SETUP.md\\)\n- Keep ci-cd.yml workflow for Docker Compose deployment via self-hosted runner\n- Add CLAUDE.md for Claude Code guidance\n\nServer resources are limited, reverting to container-based deployment.\n\n🤖 Generated with [Claude Code]\\(https://claude.ai/code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(test:*)",
+      "Bash(docker compose:*)",
+      "Bash(powershell -Command \"cd ''d:\\\\Documents\\\\python\\\\bot-compra-agil''; docker --version\")",
+      "Bash(powershell -Command \"docker --version; if \\($? { ''Docker OK'' } else { ''Docker not found'' }\")",
+      "Bash(powershell -Command \"cd ''d:\\\\Documents\\\\python\\\\bot-compra-agil''; docker compose build --progress=plain 2>&1 | Select-Object -Last 50\")",
+      "Bash(powershell -Command \"docker exec compra_agil_bot ls -la /app | Select-Object -First 20\")",
+      "Bash(powershell -Command \"cd ''d:\\\\Documents\\\\python\\\\bot-compra-agil''; docker compose down\")",
+      "Bash(powershell -Command \"cd ''d:\\\\Documents\\\\python\\\\bot-compra-agil''; docker compose build bot 2>&1 | Select-Object -Last 30\")",
+      "Bash(powershell -Command \"docker run --rm ghcr.io/gerardbourguett/bot-compra-agil/bot:latest ls -la /app/src 2>&1 | Select-Object -First 20\")",
+      "Bash(powershell -Command \"docker run --rm ghcr.io/gerardbourguett/bot-compra-agil/bot:latest ls -la /app/src | Select-String ''scheduler''\")",
+      "Bash(powershell -Command \"cd ''d:\\\\Documents\\\\python\\\\bot-compra-agil''; docker compose up -d\")",
+      "Bash(powershell -Command \"docker logs compra_agil_bot 2>&1 | Select-Object -Last 20\")",
+      "Bash(powershell -Command \"docker logs compra_agil_scraper 2>&1 | Select-Object -Last 20\")",
+      "Bash(powershell -Command \"cd ''d:\\\\Documents\\\\python\\\\bot-compra-agil''; docker compose build scraper 2>&1 | Select-Object -Last 10\")",
+      "Bash(powershell -Command \"cd ''d:\\\\Documents\\\\python\\\\bot-compra-agil''; docker compose restart scraper\")"
     ]
   }
 }

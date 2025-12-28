@@ -20,8 +20,7 @@ def run_scraper_lista():
     logger.info("🕷️ Iniciando Scraper de Lista...")
     try:
         # Ejecutar como subproceso para aislar memoria y errores
-        # En Docker, los archivos están en la raíz /app, no en src/
-        result = subprocess.run(['python', 'scraper.py'], capture_output=True, text=True)
+        result = subprocess.run(['python', 'src/scraper.py'], capture_output=True, text=True)
         if result.returncode == 0:
             logger.info("✅ Scraper de Lista finalizado correctamente")
         else:
@@ -34,7 +33,7 @@ def run_scraper_detalles():
     logger.info("🔍 Iniciando Scraper de Detalles...")
     try:
         # Ejecutar como subproceso
-        result = subprocess.run(['python', 'obtener_detalles.py'], capture_output=True, text=True)
+        result = subprocess.run(['python', 'src/obtener_detalles.py'], capture_output=True, text=True)
         if result.returncode == 0:
             logger.info("✅ Scraper de Detalles finalizado correctamente")
         else:
