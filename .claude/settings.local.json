@@ -21,7 +21,8 @@
       "Bash(powershell -Command \"cd ''d:\\\\Documents\\\\python\\\\bot-compra-agil''; docker compose restart scraper\")",
       "Skill(superpowers:brainstorming)",
       "Bash(chmod:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

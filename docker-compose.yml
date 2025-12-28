@@ -37,6 +37,61 @@ services:
       timeout: 5s
       retries: 5
 
+  # Prometheus - Sistema de métricas
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: compra_agil_prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    networks:
+      - default
+    depends_on:
+      - bot
+      - scraper
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Grafana - Dashboards y visualización
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: compra_agil_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=redis-datasource
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    networks:
+      - default
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Scraper (ejecuta cada 6 horas)
   scraper:
     image: ghcr.io/${IMAGE_REPO:-gerardbourguett/bot-compra-agil}/scraper:latest
@@ -126,6 +181,22 @@ volumes:
       com.docker.compose.project: "compra_agil"
       com.docker.compose.persistent: "true"
       description: "Redis cache data - Safe to delete if needed"
+
+  prometheus_data:
+    driver: local
+    name: compra_agil_prometheus_data
+    labels:
+      com.docker.compose.project: "compra_agil"
+      com.docker.compose.persistent: "true"
+      description: "Prometheus time-series data (30 days retention)"
+
+  grafana_data:
+    driver: local
+    name: compra_agil_grafana_data
+    labels:
+      com.docker.compose.project: "compra_agil"
+      com.docker.compose.persistent: "true"
+      description: "Grafana dashboards and settings"
 
 networks:
   default:

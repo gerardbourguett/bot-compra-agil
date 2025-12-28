@@ -1,0 +1,215 @@
+# Alerting Rules for CompraAgil
+groups:
+  # ==================== ALERTAS CRÍTICAS ====================
+  - name: critical_alerts
+    interval: 30s
+    rules:
+      # Base de datos caída
+      - alert: PostgreSQLDown
+        expr: up{job="postgresql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL está caído"
+          description: "La base de datos PostgreSQL no responde por más de 1 minuto."
+
+      # Redis caído
+      - alert: RedisDown
+        expr: compra_agil_redis_conexiones_activas == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis está caído o sin conexiones"
+          description: "Redis no tiene conexiones activas por más de 2 minutos."
+
+      # Bot caído
+      - alert: BotDown
+        expr: up{job="compraagil-bot"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: bot
+        annotations:
+          summary: "Bot de Telegram está caído"
+          description: "El bot no responde al healthcheck por más de 2 minutos."
+
+      # Scraper caído
+      - alert: ScraperDown
+        expr: up{job="compraagil-scraper"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: scraper
+        annotations:
+          summary: "Scraper está caído"
+          description: "El scraper no responde por más de 5 minutos."
+
+  # ==================== ALERTAS DE PERFORMANCE ====================
+  - name: performance_alerts
+    interval: 1m
+    rules:
+      # Alta latencia en ML
+      - alert: HighMLLatency
+        expr: histogram_quantile(0.95, rate(compra_agil_ml_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: ml
+        annotations:
+          summary: "Alta latencia en operaciones ML"
+          description: "El p95 de latencia ML está por encima de 30s durante 5 minutos."
+
+      # Alta latencia en DB queries
+      - alert: HighDatabaseLatency
+        expr: histogram_quantile(0.95, rate(compra_agil_db_query_duration_seconds_bucket[5m])) > 5
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Alta latencia en queries a BD"
+          description: "El p95 de queries está por encima de 5s durante 3 minutos."
+
+      # Alto uso de memoria
+      - alert: HighMemoryUsage
+        expr: compra_agil_memoria_uso_bytes{tipo="percent"} > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Alto uso de memoria"
+          description: "El proceso está usando más del 85% de memoria por más de 5 minutos."
+
+      # Alto uso de CPU
+      - alert: HighCPUUsage
+        expr: compra_agil_cpu_uso_percent > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Alto uso de CPU"
+          description: "El proceso está usando más del 80% de CPU por más de 10 minutos."
+
+      # Cache hit rate bajo
+      - alert: LowCacheHitRate
+        expr: |
+          rate(compra_agil_cache_operations_total{result="hit"}[5m]) /
+          (rate(compra_agil_cache_operations_total{result="hit"}[5m]) +
+           rate(compra_agil_cache_operations_total{result="miss"}[5m])) < 0.5
+        for: 10m
+        labels:
+          severity: info
+          component: cache
+        annotations:
+          summary: "Cache hit rate bajo"
+          description: "El cache hit rate está por debajo del 50% durante 10 minutos."
+
+  # ==================== ALERTAS DE ERRORES ====================
+  - name: error_alerts
+    interval: 1m
+    rules:
+      # Alto rate de errores en API
+      - alert: HighAPIErrorRate
+        expr: |
+          rate(compra_agil_errors_total[5m]) > 10
+        for: 3m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Alto rate de errores en API"
+          description: "Se están generando más de 10 errores/segundo durante 3 minutos."
+
+      # Errores de Gemini AI
+      - alert: GeminiAPIErrors
+        expr: |
+          rate(compra_agil_errors_total{service="gemini"}[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+          component: ai
+        annotations:
+          summary: "Errores frecuentes en Gemini AI"
+          description: "La API de Gemini está generando errores frecuentes."
+
+  # ==================== ALERTAS DE NEGOCIO ====================
+  - name: business_alerts
+    interval: 5m
+    rules:
+      # Caída drástica en comandos ejecutados
+      - alert: LowCommandVolume
+        expr: |
+          rate(compra_agil_commands_total[1h]) < 0.1
+        for: 30m
+        labels:
+          severity: info
+          component: business
+        annotations:
+          summary: "Bajo volumen de comandos"
+          description: "El volumen de comandos ejecutados ha caído drásticamente."
+
+      # Usuarios activos muy bajos
+      - alert: LowActiveUsers
+        expr: compra_agil_active_users < 5
+        for: 1h
+        labels:
+          severity: info
+          component: business
+        annotations:
+          summary: "Pocos usuarios activos"
+          description: "Menos de 5 usuarios activos en la última hora."
+
+      # Features premium bloqueadas frecuentemente (oportunidad de upsell)
+      - alert: HighPremiumBlocked
+        expr: |
+          rate(compra_agil_premium_blocked_total[1h]) > 10
+        for: 30m
+        labels:
+          severity: info
+          component: monetization
+        annotations:
+          summary: "Alta demanda de features premium"
+          description: "Usuarios están intentando acceder a features premium frecuentemente."
+
+  # ==================== ALERTAS DE RECURSOS ====================
+  - name: resource_alerts
+    interval: 5m
+    rules:
+      # Muchas conexiones a PostgreSQL
+      - alert: HighDatabaseConnections
+        expr: compra_agil_db_conexiones_activas > 50
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Muchas conexiones activas a PostgreSQL"
+          description: "Hay más de 50 conexiones activas a la base de datos."
+
+      # Pocas licitaciones activas (posible problema con scraper)
+      - alert: LowActiveTenders
+        expr: compra_agil_licitaciones_activas < 100
+        for: 1h
+        labels:
+          severity: warning
+          component: scraper
+        annotations:
+          summary: "Pocas licitaciones activas"
+          description: "Solo hay {{ $value }} licitaciones activas, posible problema con el scraper."
+
+      # Redis usando mucha memoria
+      - alert: HighRedisMemory
+        expr: compra_agil_redis_memoria_bytes > 450000000  # 450MB
+        for: 10m
+        labels:
+          severity: info
+          component: cache
+        annotations:
+          summary: "Redis usando mucha memoria"
+          description: "Redis está usando más de 450MB de memoria."
