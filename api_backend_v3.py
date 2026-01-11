@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 import database_extended as db
 import ml_precio_optimo
 import rag_historico
+import auth_service
 from gemini_prompts import (
     ContextoUsuario, ContextoLicitacion, PerfilExperiencia,
     clasificar_perfil, get_system_prompt_principiante,
@@ -88,26 +89,27 @@ app.add_middleware(
 
 # ==================== UTILIDADES ====================
 
-def paginate_query(query: str, page: int, limit: int, count_query: str = None):
-    """Ejecuta query con paginación"""
+def paginate_query(query: str, page: int, limit: int, count_query: Optional[str] = None, params: tuple = ()):
+    """Ejecuta query con paginación usando parámetros seguros"""
     conn = db.get_connection()
     cursor = conn.cursor()
     
     # Contar total
     if count_query:
-        cursor.execute(count_query)
+        cursor.execute(count_query, params)
     else:
         count_query = query.replace("SELECT *", "SELECT COUNT(*)")
         count_query = count_query.split("ORDER BY")[0]
         count_query = count_query.split("LIMIT")[0]
-        cursor.execute(count_query)
+        cursor.execute(count_query, params)
     
     total = cursor.fetchone()[0]
     
     # Query paginada
     offset = (page - 1) * limit
-    paginated_query = f"{query} LIMIT {limit} OFFSET {offset}"
-    cursor.execute(paginated_query)
+    placeholder = '%s' if db.USE_POSTGRES else '?'
+    paginated_query = f"{query} LIMIT {placeholder} OFFSET {placeholder}"
+    cursor.execute(paginated_query, params + (limit, offset))
     
     results = cursor.fetchall()
     columns = [desc[0] for desc in cursor.description]
@@ -171,17 +173,24 @@ async def listar_licitaciones(
     monto_max: Optional[int] = None,
     order_by: str = Query("fecha_cierre", regex="^-?(fecha_cierre|monto_disponible|codigo)$")
 ):
-    """Lista licitaciones con filtros y paginación"""
+    """Lista licitaciones con filtros y paginación (SQL Injection protected)"""
     try:
+        placeholder = '%s' if db.USE_POSTGRES else '?'
         where_clauses = []
+        params = []
+        
         if estado:
-            where_clauses.append(f"estado = '{estado}'")
+            where_clauses.append(f"estado = {placeholder}")
+            params.append(estado)
         if organismo:
-            where_clauses.append(f"organismo ILIKE '%{organismo}%'")
+            where_clauses.append(f"organismo ILIKE {placeholder}")
+            params.append(f"%{organismo}%")
         if monto_min:
-            where_clauses.append(f"monto_disponible >= {monto_min}")
+            where_clauses.append(f"monto_disponible >= {placeholder}")
+            params.append(monto_min)
         if monto_max:
-            where_clauses.append(f"monto_disponible <= {monto_max}")
+            where_clauses.append(f"monto_disponible <= {placeholder}")
+            params.append(monto_max)
         
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
         
@@ -196,7 +205,7 @@ async def listar_licitaciones(
         
         count_query = f"SELECT COUNT(*) FROM licitaciones {where_clause}"
         
-        return paginate_query(query, page, limit, count_query)
+        return paginate_query(query, page, limit, count_query, tuple(params))
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -246,12 +255,17 @@ async def listar_historico(
     region: Optional[str] = None,
     solo_ganadores: bool = False
 ):
-    """Lista datos históricos con filtros"""
+    """Lista datos históricos con filtros (SQL Injection protected)"""
+    placeholder = '%s' if db.USE_POSTGRES else '?'
     where_clauses = []
+    params = []
+    
     if producto:
-        where_clauses.append(f"LOWER(producto_cotizado) LIKE LOWER('%{producto}%')")
+        where_clauses.append(f"LOWER(producto_cotizado) LIKE LOWER({placeholder})")
+        params.append(f"%{producto}%")
     if region:
-        where_clauses.append(f"region = '{region}'")
+        where_clauses.append(f"region = {placeholder}")
+        params.append(region)
     if solo_ganadores:
         where_clauses.append("es_ganador = TRUE")
     
@@ -260,7 +274,7 @@ async def listar_historico(
     query = f"SELECT * FROM historico_licitaciones {where_clause} ORDER BY fecha_cierre DESC"
     count_query = f"SELECT COUNT(*) FROM historico_licitaciones {where_clause}"
     
-    return paginate_query(query, page, limit, count_query)
+    return paginate_query(query, page, limit, count_query, tuple(params))
 
 # ==================== PRODUCTOS ====================
 
@@ -321,8 +335,16 @@ async def obtener_perfil(telegram_id: int):
 # ==================== ML ENDPOINTS ====================
 
 @app.post("/api/v3/ml/precio")
-async def calcular_precio_optimo(request: PrecioOptimoRequest):
-    """Calcula precio óptimo basado en histórico"""
+async def calcular_precio_optimo(
+    request: PrecioOptimoRequest,
+    user_id: Optional[int] = Depends(auth_service.optional_api_key)
+):
+    """
+    Calcula precio óptimo basado en histórico.
+    
+    Autenticación opcional con X-API-Key header.
+    Usuarios autenticados tienen mayor límite de requests.
+    """
     try:
         resultado = ml_precio_optimo.calcular_precio_optimo(
             producto=request.producto,
@@ -335,8 +357,16 @@ async def calcular_precio_optimo(request: PrecioOptimoRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v3/historico/buscar")
-async def buscar_historico(query: str, limite: int = 10):
-    """Búsqueda RAG en histórico"""
+async def buscar_historico(
+    query: str,
+    limite: int = 10,
+    user_id: Optional[int] = Depends(auth_service.optional_api_key)
+):
+    """
+    Búsqueda RAG en histórico.
+    
+    Autenticación opcional con X-API-Key header.
+    """
     try:
         casos = rag_historico.buscar_casos_similares(
             nombre_licitacion=query,
@@ -454,6 +484,85 @@ async def stats_por_region(region: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== AUTENTICACIÓN ====================
+
+@app.post("/api/v3/auth/generate-key")
+async def generar_api_key_endpoint(
+    user_id: int,
+    nombre: str = "API Key"
+):
+    """
+    Genera una nueva API key para un usuario.
+    Solo disponible para tier PROFESIONAL.
+    
+    ⚠️ La API key se muestra UNA SOLA VEZ. Guárdala de forma segura.
+    """
+    try:
+        result = auth_service.crear_api_key_para_usuario(user_id, nombre)
+        return {
+            "success": True,
+            "message": "⚠️ IMPORTANTE: Guarda esta API key. No se volverá a mostrar.",
+            **result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v3/auth/keys/{user_id}")
+async def listar_api_keys_endpoint(user_id: int):
+    """
+    Lista todas las API keys de un usuario (sin mostrar las keys completas).
+    """
+    try:
+        keys = auth_service.listar_api_keys(user_id)
+        return {
+            "success": True,
+            "user_id": user_id,
+            "keys": keys,
+            "total": len(keys)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v3/auth/keys/{user_id}/{key_hash}")
+async def revocar_api_key_endpoint(
+    user_id: int,
+    key_hash: str
+):
+    """
+    Revoca (desactiva) una API key.
+    """
+    try:
+        success = auth_service.revocar_api_key(user_id, key_hash)
+        if not success:
+            raise HTTPException(status_code=404, detail="API key no encontrada")
+        
+        return {
+            "success": True,
+            "message": "API key revocada exitosamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v3/auth/validate")
+async def validar_api_key_endpoint(user_id: int = auth_service.require_api_key):
+    """
+    Endpoint de prueba para validar que tu API key funciona.
+    Requiere header: X-API-Key: tu-api-key
+    """
+    return {
+        "success": True,
+        "message": "API key válida",
+        "user_id": user_id,
+        "authenticated": True
+    }
 
 # ==================== MAIN ====================
 

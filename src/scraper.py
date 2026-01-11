@@ -1,11 +1,15 @@
+import os
 import time
 from datetime import datetime, timedelta
 from curl_cffi import requests
+from dotenv import load_dotenv
 import database_extended as db
+
+load_dotenv()
 
 # Configuración de la API
 API_BASE_URL = "https://api.buscador.mercadopublico.cl/compra-agil"
-API_KEY = "e93089e4-437c-4723-b343-4fa20045e3bc"
+API_KEY = os.getenv('MERCADO_PUBLICO_API_KEY', 'e93089e4-437c-4723-b343-4fa20045e3bc')
 
 
 def obtener_headers():

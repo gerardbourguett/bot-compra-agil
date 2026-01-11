@@ -22,6 +22,7 @@ import database_bot as db_bot
 import ml_utils
 import reportes
 import metrics_server
+import filtros
 
 # Importar funciones de las partes del bot
 from bot_inteligente_parte1 import (

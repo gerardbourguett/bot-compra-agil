@@ -83,7 +83,7 @@ def buscar_casos_similares(
                 LIMIT %s
             """
             params = (nombre_licitacion, nombre_licitacion, nombre_licitacion,
-                     nombre_licitacion, top_k * 3)
+                     nombre_licitacion, limite * 3)
             df = pd.read_sql(query, conn, params=params)
         else:
             df = pd.read_sql(query, conn)

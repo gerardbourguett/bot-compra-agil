@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuración Redis
-REDIS_URL = os.getenv('REDIS_URL', 'redis://64.176.19.51:6379/0')
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
 try:
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
