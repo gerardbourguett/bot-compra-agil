@@ -6,7 +6,7 @@ import requests
 import json
 from datetime import datetime
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8001"
 
 def print_test(name, success, data=None):
     """Imprime resultado de test"""

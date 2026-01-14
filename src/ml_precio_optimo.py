@@ -263,23 +263,23 @@ def generar_recomendacion(
     diferencia_pct = ((precio_rec - mediana) / mediana * 100) if mediana > 0 else 0
     
     recomendacion = f"""
-📊 {nivel_confianza} (basado en {n_registros} registros históricos)
+[STATS] {nivel_confianza} (basado en {n_registros} registros historicos)
 
-💰 Precio Recomendado: ${precio_rec:,.0f} por unidad
-   • {abs(diferencia_pct):.1f}% {'por debajo' if diferencia_pct < 0 else 'por encima'} de la mediana histórica
+[PRICE] Precio Recomendado: ${precio_rec:,.0f} por unidad
+   - {abs(diferencia_pct):.1f}% {'por debajo' if diferencia_pct < 0 else 'por encima'} de la mediana historica
 
-🎯 Estrategia:
+[STRATEGY] Estrategia:
 """
     
     if diferencia_pct < -5:
-        recomendacion += "   • Precio muy competitivo - Alta probabilidad de ganar\n"
-        recomendacion += "   • Considera si el margen es suficiente"
+        recomendacion += "   - Precio muy competitivo - Alta probabilidad de ganar\n"
+        recomendacion += "   - Considera si el margen es suficiente"
     elif diferencia_pct > 5:
-        recomendacion += "   • Precio conservador - Buen margen pero menor probabilidad\n"
-        recomendacion += "   • Evalúa bajar si la licitación es estratégica"
+        recomendacion += "   - Precio conservador - Buen margen pero menor probabilidad\n"
+        recomendacion += "   - Evalua bajar si la licitacion es estrategica"
     else:
-        recomendacion += "   • Precio equilibrado - Balance óptimo margen/probabilidad\n"
-        recomendacion += "   • Sweet spot según datos históricos"
+        recomendacion += "   - Precio equilibrado - Balance optimo margen/probabilidad\n"
+        recomendacion += "   - Sweet spot segun datos historicos"
     
     return recomendacion.strip()
 
@@ -346,25 +346,25 @@ def obtener_recomendacion_rapida(
     resultado = calcular_precio_optimo(producto, cantidad, region)
     
     if not resultado['success']:
-        return f"❌ {resultado['error']}"
+        return f"[ERROR] {resultado['error']}"
     
     precio = resultado['precio_total']['recomendado']
     rango = f"${resultado['precio_total']['minimo_competitivo']:,.0f} - ${resultado['precio_total']['maximo_aceptable']:,.0f}"
     
     mensaje = f"""
-💰 RECOMENDACIÓN DE PRECIO
+[PRICE] RECOMENDACION DE PRECIO
 
 Producto: {producto}
 Cantidad: {cantidad} unidades
 
 {resultado['recomendacion']}
 
-📈 Rango Competitivo: {rango}
-💵 Precio Total Sugerido: ${precio:,.0f}
+[RANGE] Rango Competitivo: {rango}
+[TOTAL] Precio Total Sugerido: ${precio:,.0f}
 
-📊 Datos: {resultado['estadisticas']['n_registros']} licitaciones analizadas
-   • {resultado['estadisticas']['n_ganadores']} ofertas ganadoras
-   • Tasa de conversión: {resultado['estadisticas']['tasa_conversion']:.1f}%
+[DATA] Datos: {resultado['estadisticas']['n_registros']} licitaciones analizadas
+   - {resultado['estadisticas']['n_ganadores']} ofertas ganadoras
+   - Tasa de conversion: {resultado['estadisticas']['tasa_conversion']:.1f}%
 """
     
     return mensaje.strip()
@@ -389,4 +389,4 @@ if __name__ == "__main__":
         print(f"Total competidores: {competencia['total_competidores']}")
         print(f"\nTop 3 competidores frecuentes:")
         for proveedor, datos in list(competencia['top_competidores'].items())[:3]:
-            print(f"  • {proveedor}: {datos['monto_total_count']} ofertas")
+            print(f"  - {proveedor}: {datos['monto_total_count']} ofertas")

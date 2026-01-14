@@ -26,7 +26,7 @@ def migrate_api_keys_schema():
     
     try:
         # Tabla de API keys
-        print("\n📋 Creando tabla: api_keys...")
+        print("\n[*] Creando tabla: api_keys...")
         
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS api_keys (
@@ -39,10 +39,10 @@ def migrate_api_keys_schema():
                 is_active BOOLEAN DEFAULT TRUE
             )
         """)
-        print("✅ Tabla api_keys creada")
+        print("[OK] Tabla api_keys creada")
         
         # Índices para performance
-        print("\n📋 Creando índices...")
+        print("\n[*] Creando indices...")
         
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_api_keys_user
@@ -59,21 +59,21 @@ def migrate_api_keys_schema():
             ON api_keys(user_id, is_active)
         """)
         
-        print("✅ Índices creados")
+        print("[OK] Indices creados")
         
         # Commit de cambios
         conn.commit()
         
         print("\n" + "=" * 60)
-        print("✅ MIGRACIÓN COMPLETADA EXITOSAMENTE")
+        print("[OK] MIGRACION COMPLETADA EXITOSAMENTE")
         print("=" * 60)
         
         # Mostrar resumen
-        print("\n📊 Resumen:")
+        print("\n[INFO] Resumen:")
         print("  - api_keys: Almacena API keys hasheadas para autenticación")
         print("  - Índices: Optimizados para validación rápida")
         
-        print("\n💡 Próximos pasos:")
+        print("\n[TIP] Proximos pasos:")
         print("  1. Usuarios con tier PROFESIONAL pueden generar API keys")
         print("  2. Usar POST /api/v3/auth/generate-key para crear una key")
         print("  3. Incluir header 'X-API-Key: tu-key' en requests a la API")
@@ -81,7 +81,7 @@ def migrate_api_keys_schema():
         return True
         
     except Exception as e:
-        print(f"\n❌ Error en la migración: {e}")
+        print(f"\n[ERROR] Error en la migracion: {e}")
         conn.rollback()
         return False
         
@@ -92,7 +92,7 @@ def migrate_api_keys_schema():
 def verify_migration():
     """Verifica que la tabla se creó correctamente"""
     
-    print("\n🔍 Verificando migración...")
+    print("\n[CHECK] Verificando migracion...")
     
     conn = db.get_connection()
     cursor = conn.cursor()
@@ -112,7 +112,7 @@ def verify_migration():
             """)
         
         exists = cursor.fetchone()[0] > 0
-        status = "✅" if exists else "❌"
+        status = "[OK]" if exists else "[FAIL]"
         print(f"  {status} Tabla api_keys")
         
         if exists:
@@ -131,12 +131,12 @@ def verify_migration():
                 """)
             
             indices = cursor.fetchone()[0]
-            print(f"  ✅ {indices} índices creados")
+            print(f"  [OK] {indices} indices creados")
         
         return exists
         
     except Exception as e:
-        print(f"❌ Error al verificar: {e}")
+        print(f"[ERROR] Error al verificar: {e}")
         return False
         
     finally:
@@ -144,11 +144,11 @@ def verify_migration():
 
 
 if __name__ == "__main__":
-    print("\n🚀 Iniciando migración de base de datos...\n")
+    print("\n[START] Iniciando migracion de base de datos...\n")
     
     # Verificar tipo de BD
-    print(f"📌 Tipo de BD: {'PostgreSQL' if db.USE_POSTGRES else 'SQLite'}")
-    print(f"📌 DATABASE_URL: {db.DATABASE_URL[:30]}..." if db.DATABASE_URL else "📌 SQLite Local")
+    print(f"[DB] Tipo de BD: {'PostgreSQL' if db.USE_POSTGRES else 'SQLite'}")
+    print(f"[DB] DATABASE_URL: {db.DATABASE_URL[:30]}..." if db.DATABASE_URL else "[DB] SQLite Local")
     
     # Ejecutar migración
     success = migrate_api_keys_schema()
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     if success:
         # Verificar
         verify_migration()
-        print("\n✨ ¡Listo para usar autenticación API! ✨\n")
+        print("\n[DONE] Listo para usar autenticacion API!\n")
     else:
-        print("\n⚠️ La migración falló. Revisa los errores arriba.\n")
+        print("\n[WARNING] La migracion fallo. Revisa los errores arriba.\n")
         sys.exit(1)

@@ -19,11 +19,11 @@ try:
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     redis_client.ping()
     REDIS_AVAILABLE = True
-    print("✅ Redis conectado exitosamente")
+    print("[OK] Redis conectado exitosamente")
 except Exception as e:
     redis_client = None
     REDIS_AVAILABLE = False
-    print(f"⚠️ Redis no disponible: {e}")
+    print(f"[WARNING] Redis no disponible: {e}")
 
 # TTLs configurados por tipo de dato
 CACHE_TTL = {
@@ -124,14 +124,14 @@ def cache_response(
             try:
                 cached = redis_client.get(cache_key)
                 if cached:
-                    print(f"📦 Cache HIT: {cache_key}")
+                    print(f"[CACHE HIT] {cache_key}")
                     _track_cache_hit()
                     return json.loads(cached)
             except Exception as e:
-                print(f"⚠️ Error leyendo cache: {e}")
+                print(f"[WARNING] Error leyendo cache: {e}")
 
             # Cache miss - ejecutar función
-            print(f"🔄 Cache MISS: {cache_key}")
+            print(f"[CACHE MISS] {cache_key}")
             _track_cache_miss()
             result = await func(*args, **kwargs)
 
@@ -142,9 +142,9 @@ def cache_response(
                     ttl or CACHE_TTL.get('default', timedelta(minutes=15)),
                     json.dumps(result, default=str)
                 )
-                print(f"💾 Guardado en cache: {cache_key}")
+                print(f"[CACHE SAVE] {cache_key}")
             except Exception as e:
-                print(f"⚠️  Error guardando cache: {e}")
+                print(f"[WARNING] Error guardando cache: {e}")
 
             return result
 
@@ -179,14 +179,14 @@ def cache_response_sync(
             try:
                 cached = redis_client.get(cache_key)
                 if cached:
-                    print(f"📦 Cache HIT: {cache_key}")
+                    print(f"[CACHE HIT] {cache_key}")
                     _track_cache_hit()
                     return json.loads(cached)
             except Exception as e:
-                print(f"⚠️ Error leyendo cache: {e}")
+                print(f"[WARNING] Error leyendo cache: {e}")
 
             # Cache miss - ejecutar función
-            print(f"🔄 Cache MISS: {cache_key}")
+            print(f"[CACHE MISS] {cache_key}")
             _track_cache_miss()
             result = func(*args, **kwargs)
 
@@ -197,9 +197,9 @@ def cache_response_sync(
                     ttl or CACHE_TTL.get('default', timedelta(minutes=15)),
                     json.dumps(result, default=str)
                 )
-                print(f"💾 Guardado en cache: {cache_key}")
+                print(f"[CACHE SAVE] {cache_key}")
             except Exception as e:
-                print(f"⚠️  Error guardando cache: {e}")
+                print(f"[WARNING] Error guardando cache: {e}")
 
             return result
 
@@ -221,11 +221,11 @@ def invalidate_cache(pattern: str):
         keys = redis_client.keys(pattern)
         if keys:
             count = redis_client.delete(*keys)
-            print(f"🗑️ Invalidados {count} keys con patrón: {pattern}")
+            print(f"[INVALIDATED] {count} keys con patrón: {pattern}")
             return count
         return 0
     except Exception as e:
-        print(f"⚠️ Error invalidando cache: {e}")
+        print(f"[WARNING] Error invalidando cache: {e}")
         return 0
 
 def get_cache_stats() -> dict:
@@ -264,10 +264,10 @@ def clear_all_cache():
     
     try:
         redis_client.flushdb()
-        print("🗑️ Todo el cache ha sido limpiado")
+        print("[CLEARED] Todo el cache ha sido limpiado")
         return True
     except Exception as e:
-        print(f"⚠️ Error limpiando cache: {e}")
+        print(f"[WARNING] Error limpiando cache: {e}")
         return False
 
 # Rate Limiting con Redis
@@ -308,7 +308,7 @@ class RateLimiter:
                 "reset_in": redis_client.ttl(key)
             }
         except Exception as e:
-            print(f"⚠️ Error en rate limiting: {e}")
+            print(f"[WARNING] Error en rate limiting: {e}")
             return True, {"error": str(e)}
 
 # Instancias de rate limiters
@@ -319,29 +319,29 @@ rate_limiters = {
 }
 
 if __name__ == "__main__":
-    # Test básico
+    # Test basico
     print("=" * 60)
     print("REDIS CACHE MODULE - TEST")
     print("=" * 60)
     
     if REDIS_AVAILABLE:
-        print("\n✅ Redis disponible")
+        print("\n[OK] Redis disponible")
         print(f"URL: {REDIS_URL}")
         
         # Test cache stats
         stats = get_cache_stats()
-        print(f"\n📊 Cache Stats:")
+        print(f"\n[STATS] Cache Stats:")
         for key, value in stats.items():
             print(f"  {key}: {value}")
         
         # Test rate limiting
         limiter = rate_limiters['global']
         allowed, info = limiter.is_allowed("test_key")
-        print(f"\n🚦 Rate Limit Test:")
+        print(f"\n[RATE] Rate Limit Test:")
         print(f"  Allowed: {allowed}")
         print(f"  Info: {info}")
     else:
-        print("\n⚠️ Redis NO disponible")
+        print("\n[WARNING] Redis NO disponible")
         print("Instala Redis:")
         print("  Windows: https://github.com/microsoftarchive/redis/releases")
         print("  Docker: docker run -d -p 6379:6379 redis:alpine")

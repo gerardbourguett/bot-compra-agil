@@ -26,7 +26,7 @@ def migrate_subscriptions_schema():
     
     try:
         # 1. Tabla de suscripciones
-        print("\n📋 Creando tabla: subscriptions...")
+        print("\n[*] Creando tabla: subscriptions...")
         
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS subscriptions (
@@ -41,10 +41,10 @@ def migrate_subscriptions_schema():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("✅ Tabla subscriptions creada")
+        print("[OK] Tabla subscriptions creada")
         
         # 2. Tabla de tracking de uso
-        print("\n📋 Creando tabla: usage_tracking...")
+        print("\n[*] Creando tabla: usage_tracking...")
         
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS usage_tracking (
@@ -56,10 +56,10 @@ def migrate_subscriptions_schema():
                 metadata {'JSONB' if db.USE_POSTGRES else 'TEXT'}
             )
         """)
-        print("✅ Tabla usage_tracking creada")
+        print("[OK] Tabla usage_tracking creada")
         
         # 3. Índices para performance
-        print("\n📋 Creando índices...")
+        print("\n[*] Creando indices...")
         
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_usage_user_action 
@@ -71,10 +71,10 @@ def migrate_subscriptions_schema():
             ON usage_tracking(timestamp)
         """)
         
-        print("✅ Índices creados")
+        print("[OK] Indices creados")
         
         # 4. Tabla de pagos (para futuro)
-        print("\n📋 Creando tabla: payments...")
+        print("\n[*] Creando tabla: payments...")
         
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS payments (
@@ -89,23 +89,23 @@ def migrate_subscriptions_schema():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("✅ Tabla payments creada")
+        print("[OK] Tabla payments creada")
         
         # Commit de cambios
         conn.commit()
         
         print("\n" + "=" * 60)
-        print("✅ MIGRACIÓN COMPLETADA EXITOSAMENTE")
+        print("[OK] MIGRACION COMPLETADA EXITOSAMENTE")
         print("=" * 60)
         
         # Mostrar resumen
-        print("\n📊 Resumen:")
+        print("\n[INFO] Resumen:")
         print("  - subscriptions: Sistema de tiers y estados")
         print("  - usage_tracking: Tracking de uso por usuario")
         print("  - payments: Historial de pagos")
         print("  - Índices: Optimizados para consultas frecuentes")
         
-        print("\n💡 Próximos pasos:")
+        print("\n[TIP] Proximos pasos:")
         print("  1. Todos los usuarios nuevos tendrán tier 'free' por defecto")
         print("  2. El sistema trackeará automáticamente el uso")
         print("  3. Puedes empezar a usar subscriptions.py")
@@ -113,7 +113,7 @@ def migrate_subscriptions_schema():
         return True
         
     except Exception as e:
-        print(f"\n❌ Error en la migración: {e}")
+        print(f"\n[ERROR] Error en la migracion: {e}")
         conn.rollback()
         return False
         
@@ -124,7 +124,7 @@ def migrate_subscriptions_schema():
 def verify_migration():
     """Verifica que las tablas se crearon correctamente"""
     
-    print("\n🔍 Verificando migración...")
+    print("\n[CHECK] Verificando migracion...")
     
     conn = db.get_connection()
     cursor = conn.cursor()
@@ -147,13 +147,13 @@ def verify_migration():
                 """, (table,))
             
             exists = cursor.fetchone()[0] > 0
-            status = "✅" if exists else "❌"
+            status = "[OK]" if exists else "[FAIL]"
             print(f"  {status} Tabla {table}")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error al verificar: {e}")
+        print(f"[ERROR] Error al verificar: {e}")
         return False
         
     finally:
@@ -161,11 +161,11 @@ def verify_migration():
 
 
 if __name__ == "__main__":
-    print("\n🚀 Iniciando migración de base de datos...\n")
+    print("\n[START] Iniciando migracion de base de datos...\n")
     
     # Verificar tipo de BD
-    print(f"📌 Tipo de BD: {'PostgreSQL' if db.USE_POSTGRES else 'SQLite'}")
-    print(f"📌 DATABASE_URL: {db.DATABASE_URL[:30]}..." if db.DATABASE_URL else "📌 SQLite Local")
+    print(f"[DB] Tipo de BD: {'PostgreSQL' if db.USE_POSTGRES else 'SQLite'}")
+    print(f"[DB] DATABASE_URL: {db.DATABASE_URL[:30]}..." if db.DATABASE_URL else "[DB] SQLite Local")
     
     # Ejecutar migración
     success = migrate_subscriptions_schema()
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     if success:
         # Verificar
         verify_migration()
-        print("\n✨ ¡Listo para monetizar! ✨\n")
+        print("\n[DONE] Listo para monetizar!\n")
     else:
-        print("\n⚠️ La migración falló. Revisa los errores arriba.\n")
+        print("\n[WARNING] La migracion fallo. Revisa los errores arriba.\n")
         sys.exit(1)

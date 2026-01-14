@@ -43,7 +43,7 @@ def iniciar_db_extendida():
         conn = get_connection()
         cursor = conn.cursor()
     except Exception as e:
-        print(f"❌ Error al conectar a la base de datos: {e}")
+        print(f"[ERROR] Error al conectar a la base de datos: {e}")
         raise
 
     # Ajustar sintaxis según el tipo de BD
@@ -238,11 +238,11 @@ def iniciar_db_extendida():
     try:
         conn.commit()
         conn.close()
-        print("✅ Base de datos extendida creada/verificada - Todas las tablas existen")
+        print("[OK] Base de datos extendida creada/verificada - Todas las tablas existen")
     except Exception as e:
         error_msg = str(e).lower()
         if "duplicate key" not in error_msg and "already exists" not in error_msg:
-            print(f"❌ Error al crear/verificar tablas: {e}")
+            print(f"[ERROR] Error al crear/verificar tablas: {e}")
             try:
                 conn.rollback()
             except:
@@ -256,7 +256,7 @@ def iniciar_db_extendida():
             except:
                 pass
             conn.close()
-            print("✅ Tablas ya existen (ignorando errores de secuencias duplicadas)")
+            print("[OK] Tablas ya existen (ignorando errores de secuencias duplicadas)")
 
 
 def guardar_licitacion_basica(datos):
@@ -276,7 +276,7 @@ def guardar_licitacion_basica(datos):
         conn = get_connection()
         cursor = conn.cursor()
     except Exception as e:
-        print(f"❌ Error al preparar base de datos: {e}")
+        print(f"[ERROR] Error al preparar base de datos: {e}")
         return 0
 
     try:
