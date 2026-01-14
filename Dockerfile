@@ -73,16 +73,16 @@ RUN pip install --no-cache-dir gunicorn uvicorn[standard]
 
 # Health check para API
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=5)" || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:8001/health', timeout=5)" || exit 1
 
 # Exponer puerto
-EXPOSE 8000
+EXPOSE 8001
 
 # Comando de inicio
 CMD ["gunicorn", \
      "-w", "4", \
      "-k", "uvicorn.workers.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", \
+     "--bind", "0.0.0.0:8001", \
      "--timeout", "120", \
      "--access-logfile", "/app/logs/access.log", \
      "--error-logfile", "/app/logs/error.log", \
