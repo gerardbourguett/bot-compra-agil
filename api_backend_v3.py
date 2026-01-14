@@ -9,6 +9,7 @@ API REST v3.0 - CompraÁgil COMPLETA
 import sys
 import os
 import math
+import logging
 import numpy as np
 from datetime import datetime
 from math import ceil
@@ -18,6 +19,9 @@ from typing import Optional, List, Any, Dict
 from fastapi import FastAPI, HTTPException, Query, Path, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+# Logger para este módulo
+logger = logging.getLogger('compra_agil.api')
 
 # Paths
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -64,6 +68,31 @@ def sanitize_for_json(obj: Any) -> Any:
     elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
         return None
     return obj
+
+
+def raise_safe_error(status_code: int, error: Exception, context: str = "operación") -> None:
+    """
+    Lanza HTTPException con mensaje genérico para el usuario, 
+    pero loguea el error completo internamente.
+    
+    Args:
+        status_code: Código HTTP (500, 503, etc.)
+        error: Excepción original
+        context: Descripción de qué se estaba haciendo
+    """
+    # Loguear error completo internamente
+    logger.error(f"Error en {context}: {type(error).__name__}: {error}")
+    
+    # Mensaje genérico para el usuario
+    if status_code == 503:
+        detail = "Servicio temporalmente no disponible. Intente más tarde."
+    elif status_code == 404:
+        detail = f"Recurso no encontrado."
+    else:
+        detail = f"Error interno del servidor. Contacte al administrador si persiste."
+    
+    raise HTTPException(status_code=status_code, detail=detail)
+
 
 # ==================== RATE LIMITING ====================
 from collections import defaultdict
@@ -279,7 +308,7 @@ def paginate_query(query: str, page: int, limit: int, count_query: Optional[str]
     
     # Query paginada
     offset = (page - 1) * limit
-    placeholder = '%s' if db.USE_POSTGRES else '?'
+    placeholder = db.get_placeholder()
     paginated_query = f"{query} LIMIT {placeholder} OFFSET {placeholder}"
     cursor.execute(paginated_query, params + (limit, offset))
     
@@ -331,7 +360,7 @@ async def health_check():
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        raise_safe_error(503, e, "health check")
 
 # ==================== LICITACIONES ====================
 
@@ -347,7 +376,7 @@ async def listar_licitaciones(
 ):
     """Lista licitaciones con filtros y paginación (SQL Injection protected)"""
     try:
-        placeholder = '%s' if db.USE_POSTGRES else '?'
+        placeholder = db.get_placeholder()
         where_clauses = []
         params = []
         
@@ -380,7 +409,7 @@ async def listar_licitaciones(
         return paginate_query(query, page, limit, count_query, tuple(params))
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "listar licitaciones")
 
 @app.get("/api/v3/licitaciones/{codigo}")
 async def obtener_licitacion(codigo: str):
@@ -415,7 +444,7 @@ async def obtener_licitacion(codigo: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "obtener licitación")
 
 # ==================== HISTÓRICO ====================
 
@@ -428,7 +457,7 @@ async def listar_historico(
     solo_ganadores: bool = False
 ):
     """Lista datos históricos con filtros (SQL Injection protected)"""
-    placeholder = '%s' if db.USE_POSTGRES else '?'
+    placeholder = db.get_placeholder()
     where_clauses = []
     params = []
     
@@ -478,7 +507,7 @@ async def buscar_productos(
         return {"success": True, "total": len(resultados), "data": resultados}
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "buscar productos")
 
 # ==================== PERFILES ====================
 
@@ -502,7 +531,7 @@ async def obtener_perfil(telegram_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "obtener perfil")
 
 # ==================== ML ENDPOINTS ====================
 
@@ -528,7 +557,7 @@ async def calcular_precio_optimo(
         # Sanitize numpy values for JSON serialization
         return sanitize_for_json(resultado)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "calcular precio óptimo")
 
 @app.post("/api/v3/historico/buscar")
 async def buscar_historico(
@@ -549,7 +578,7 @@ async def buscar_historico(
         )
         return {"success": True, "total": len(casos), "casos": casos}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "buscar histórico RAG")
 
 @app.get("/api/v3/stats")
 async def stats_generales():
@@ -576,7 +605,7 @@ async def stats_generales():
             "monto_promedio": float(monto_prom)
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "estadísticas generales")
 
 # ==================== AI CON PROMPTS DINÁMICOS ====================
 
@@ -623,7 +652,7 @@ async def analizar_con_perfil(request: AnalisisConPerfilRequest):
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "análisis con perfil")
 
 # ==================== STATS AVANZADAS ====================
 
@@ -658,7 +687,7 @@ async def stats_por_region(region: str):
             "monto_promedio": float(stats[2]) if stats[2] else 0
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "estadísticas por región")
 
 # ==================== AUTENTICACIÓN ====================
 
@@ -684,7 +713,7 @@ async def generar_api_key_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "generar API key")
 
 
 @app.get("/api/v3/auth/keys/{user_id}")
@@ -701,7 +730,7 @@ async def listar_api_keys_endpoint(user_id: int):
             "total": len(keys)
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "listar API keys")
 
 
 @app.delete("/api/v3/auth/keys/{user_id}/{key_hash}")
@@ -724,7 +753,7 @@ async def revocar_api_key_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_safe_error(500, e, "revocar API key")
 
 
 @app.get("/api/v3/auth/validate")

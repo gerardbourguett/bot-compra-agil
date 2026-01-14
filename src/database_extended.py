@@ -38,6 +38,18 @@ def get_connection():
         return sqlite3.connect(DB_NAME)
 
 
+def get_placeholder():
+    """
+    Retorna el placeholder correcto para queries SQL parametrizadas.
+    PostgreSQL usa %s, SQLite usa ?
+    
+    Usage:
+        p = get_placeholder()
+        cursor.execute(f"SELECT * FROM users WHERE id = {p}", (user_id,))
+    """
+    return '%s' if USE_POSTGRES else '?'
+
+
 def iniciar_db_extendida():
     """
     Crea todas las tablas necesarias para almacenar información completa
@@ -47,7 +59,7 @@ def iniciar_db_extendida():
         conn = get_connection()
         cursor = conn.cursor()
     except Exception as e:
-        print(f"[ERROR] Error al conectar a la base de datos: {e}")
+        logger.error(f"Error al conectar a la base de datos: {e}")
         raise
 
     # Ajustar sintaxis según el tipo de BD
@@ -69,8 +81,8 @@ def iniciar_db_extendida():
                 # En PostgreSQL, necesitamos hacer ROLLBACK después de un error en transacción
                 try:
                     conn.rollback()
-                except:
-                    pass
+                except Exception:
+                    pass  # Rollback puede fallar si no hay transacción activa
             else:
                 raise
 
@@ -336,7 +348,7 @@ def guardar_detalle_completo(codigo, ficha, historial=None, adjuntos=None):
         # Guardar ficha detallada
         info_inst = ficha.get('informacion_institucion', {})
         
-        placeholder = '%s' if USE_POSTGRES else '?'
+        placeholder = get_placeholder()
         
         if USE_POSTGRES:
             cursor.execute(f'''

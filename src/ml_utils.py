@@ -44,7 +44,7 @@ def analizar_preferencias(user_id):
     conn = db_bot.get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if db_bot.USE_POSTGRES else '?'
+    placeholder = db_bot.get_placeholder()
     
     # 1. Obtener códigos de licitaciones con Like (feedback=1)
     cursor.execute(f'''

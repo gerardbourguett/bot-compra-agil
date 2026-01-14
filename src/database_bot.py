@@ -4,7 +4,11 @@ Incluye tablas para perfiles de empresa, licitaciones guardadas y caché de aná
 """
 import os
 import json
+import logging
 from datetime import datetime
+
+# Logger para este módulo
+logger = logging.getLogger('compra_agil.database_bot')
 
 # Detectar tipo de base de datos
 DATABASE_URL = os.getenv('DATABASE_URL', '')
@@ -24,6 +28,18 @@ def get_connection():
         return psycopg2.connect(DATABASE_URL)
     else:
         return sqlite3.connect(DB_NAME)
+
+
+def get_placeholder():
+    """
+    Retorna el placeholder correcto para queries SQL parametrizadas.
+    PostgreSQL usa %s, SQLite usa ?
+    
+    Usage:
+        p = get_placeholder()
+        cursor.execute(f"SELECT * FROM users WHERE id = {p}", (user_id,))
+    """
+    return '%s' if USE_POSTGRES else '?'
 
 
 def iniciar_db_bot():
@@ -131,12 +147,13 @@ def iniciar_db_bot():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_guardadas_codigo ON licitaciones_guardadas(codigo_licitacion)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_historial_user ON historial_interacciones(telegram_user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_feedback_codigo ON feedback_analisis(codigo_licitacion)')
-        except:
-            pass  # Índices ya existen
+        except Exception as e:
+            # Índices ya existen o error de SQLite
+            logger.debug(f"Índices ya existen o no se pudieron crear: {e}")
     
     conn.commit()
     conn.close()
-    print("✅ Tablas del bot inteligente creadas/verificadas")
+    logger.info("Tablas del bot inteligente creadas/verificadas")
 
 
 # ==================== SYSTEM STATUS ====================
@@ -146,7 +163,7 @@ def update_system_status(key, value):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     ahora = datetime.now().isoformat()
     
     try:
@@ -177,7 +194,7 @@ def get_system_status(key):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     cursor.execute(f'SELECT value, updated_at FROM system_status WHERE key = {placeholder}', (key,))
     row = cursor.fetchone()
@@ -196,7 +213,7 @@ def guardar_perfil(user_id, perfil_data):
     cursor = conn.cursor()
     
     ahora = datetime.now().isoformat()
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     try:
         if USE_POSTGRES:
@@ -274,7 +291,7 @@ def obtener_perfil(user_id):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     cursor.execute(f'SELECT * FROM perfiles_empresas WHERE telegram_user_id = {placeholder}', (user_id,))
     row = cursor.fetchone()
     conn.close()
@@ -305,7 +322,7 @@ def guardar_licitacion(user_id, codigo, notas=None):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     try:
         cursor.execute(f'''
@@ -328,7 +345,7 @@ def obtener_licitaciones_guardadas(user_id):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     cursor.execute(f'''
         SELECT lg.codigo_licitacion, lg.fecha_guardado, lg.notas,
@@ -349,7 +366,7 @@ def eliminar_licitacion_guardada(user_id, codigo):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     cursor.execute(f'''
         DELETE FROM licitaciones_guardadas 
@@ -369,7 +386,7 @@ def guardar_analisis_cache(codigo, analisis, version_prompt="v1"):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     try:
         if USE_POSTGRES:
@@ -403,7 +420,7 @@ def obtener_analisis_cache(codigo, max_edad_horas=24):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     cursor.execute(f'''
         SELECT analisis_json, fecha_analisis 
@@ -434,7 +451,7 @@ def registrar_interaccion(user_id, accion, codigo=None):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     try:
         cursor.execute(f'''
@@ -457,7 +474,7 @@ def registrar_feedback(user_id, codigo, feedback):
     conn = get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if USE_POSTGRES else '?'
+    placeholder = get_placeholder()
     
     try:
         cursor.execute(f'''

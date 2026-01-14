@@ -332,7 +332,7 @@ async def analizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = db.get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if db.USE_POSTGRES else '?'
+    placeholder = db.get_placeholder()
     
     cursor.execute(f'''
         SELECT id, codigo, nombre, fecha_publicacion, fecha_cierre, organismo, 
@@ -515,7 +515,7 @@ async def detalle_licitacion(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     conn = db.get_connection()
     cursor = conn.cursor()
-    placeholder = '%s' if db.USE_POSTGRES else '?'
+    placeholder = db.get_placeholder()
     
     # 1. Obtener detalle principal
     cursor.execute(f'''

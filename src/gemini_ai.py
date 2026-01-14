@@ -1,21 +1,109 @@
 """
-Módulo de integración con Gemini AI para análisis de licitaciones.
-NUEVO: Integración con sistema RAG y recomendación de precios ML
+Módulo de integración con AI para análisis de licitaciones.
+NUEVO: Soporta múltiples proveedores (Gemini, Groq, Cerebras) via ai_providers.py
+Mantiene backward compatibility con código existente.
 """
-import google.generativeai as genai
-import os
-from dotenv import load_dotenv
+import logging
 import json
 
-load_dotenv()
+# Importar abstracción de proveedores AI
+try:
+    from ai_providers import (
+        generate_completion,
+        get_ai_provider,
+        get_available_providers,
+        AIResponse
+    )
+    AI_PROVIDERS_AVAILABLE = True
+except ImportError:
+    AI_PROVIDERS_AVAILABLE = False
 
-# Configurar Gemini
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# Importar configuración centralizada
+try:
+    from config import GEMINI_API_KEY, GEMINI_MODEL, AI_PROVIDER
+except ImportError:
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash-exp')
+    AI_PROVIDER = os.getenv('AI_PROVIDER', 'gemini')
 
-# Modelo a usar
-MODEL_NAME = "gemini-2.0-flash-exp"
+# Logger para este módulo
+logger = logging.getLogger('compra_agil.gemini_ai')
+
+# Configurar proveedor de AI
+_ai_provider = None
+
+def _get_provider():
+    """Obtiene el proveedor de AI configurado (lazy loading)."""
+    global _ai_provider
+    if _ai_provider is None:
+        if AI_PROVIDERS_AVAILABLE:
+            try:
+                _ai_provider = get_ai_provider()
+                logger.info(f"Proveedor AI configurado: {_ai_provider.name} (modelo: {_ai_provider.model})")
+            except Exception as e:
+                logger.warning(f"Error configurando proveedor AI: {e}")
+                # Fallback a Gemini directo
+                _ai_provider = _setup_legacy_gemini()
+        else:
+            _ai_provider = _setup_legacy_gemini()
+    return _ai_provider
+
+def _setup_legacy_gemini():
+    """Configuración legacy de Gemini (fallback)."""
+    try:
+        import google.generativeai as genai
+        if GEMINI_API_KEY:
+            genai.configure(api_key=GEMINI_API_KEY)
+            logger.info(f"Gemini configurado (modo legacy): {GEMINI_MODEL}")
+            return {'type': 'legacy_gemini', 'genai': genai, 'model': GEMINI_MODEL}
+    except ImportError:
+        logger.error("google-generativeai no instalado")
+    return None
+
+def _generate_text(prompt: str, **kwargs) -> str:
+    """
+    Genera texto usando el proveedor de AI configurado.
+    Esta función abstrae la llamada al proveedor.
+    """
+    provider = _get_provider()
+    
+    if provider is None:
+        raise RuntimeError("No hay proveedor de AI configurado")
+    
+    # Si es el nuevo sistema de proveedores
+    if AI_PROVIDERS_AVAILABLE and hasattr(provider, 'generate'):
+        response = provider.generate(prompt, **kwargs)
+        return response.text
+    
+    # Fallback: modo legacy Gemini
+    if isinstance(provider, dict) and provider.get('type') == 'legacy_gemini':
+        genai = provider['genai']
+        model = genai.GenerativeModel(provider['model'])
+        response = model.generate_content(prompt)
+        return response.text
+    
+    raise RuntimeError("Proveedor de AI no válido")
+
+def _parse_json_response(text: str) -> dict:
+    """Parsea respuesta de AI como JSON, limpiando markdown si existe."""
+    texto_respuesta = text.strip()
+    
+    # Limpiar markdown si existe
+    if texto_respuesta.startswith("```json"):
+        texto_respuesta = texto_respuesta[7:]
+    if texto_respuesta.startswith("```"):
+        texto_respuesta = texto_respuesta[3:]
+    if texto_respuesta.endswith("```"):
+        texto_respuesta = texto_respuesta[:-3]
+    
+    return json.loads(texto_respuesta.strip())
+
+
+# Backward compatibility: exponer MODEL_NAME para código legacy
+MODEL_NAME = GEMINI_MODEL
 
 
 def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=None, usar_historicos=True):
@@ -43,6 +131,7 @@ def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=N
     contexto_historico = ""
     insights_historicos = ""
     recomendacion_precio_ml = None
+    datos_rag = {}  # Inicializar vacío para evitar 'unbound'
     
     if usar_historicos:
         try:
@@ -51,7 +140,7 @@ def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=N
             from ml_precio_optimo import calcular_precio_optimo
             
             # Buscar casos históricos similares
-            print("🔍 Buscando casos históricos similares...")
+            logger.info("Buscando casos históricos similares...")
             datos_rag = enriquecer_analisis_licitacion(
                 nombre_licitacion=licitacion.get('nombre', ''),
                 monto_estimado=licitacion.get('monto_disponible'),
@@ -61,7 +150,7 @@ def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=N
             if datos_rag.get('tiene_datos'):
                 contexto_historico = datos_rag['contexto_para_prompt']
                 insights_historicos = datos_rag['insights']
-                print(f"✅ Encontrados {datos_rag['n_casos_encontrados']} casos históricos")
+                logger.info(f"Encontrados {datos_rag['n_casos_encontrados']} casos históricos")
             
             # Calcular precio óptimo si hay productos
             if productos_detalle and len(productos_detalle) > 0:
@@ -69,7 +158,7 @@ def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=N
                 cantidad = productos_detalle[0].get('cantidad', 1)
                 
                 if producto_principal:
-                    print(f"💰 Calculando precio óptimo para '{producto_principal}'...")
+                    logger.info(f"Calculando precio óptimo para '{producto_principal}'...")
                     recomendacion_precio_ml = calcular_precio_optimo(
                         producto=producto_principal,
                         cantidad=cantidad,
@@ -77,12 +166,12 @@ def analizar_licitacion_completo(licitacion, perfil_empresa, productos_detalle=N
                     )
                     
                     if recomendacion_precio_ml.get('success'):
-                        print(f"✅ Precio recomendado: ${recomendacion_precio_ml['precio_total']['recomendado']:,}")
+                        logger.info(f"Precio recomendado: ${recomendacion_precio_ml['precio_total']['recomendado']:,}")
         
         except ImportError as e:
-            print(f"⚠️ Módulos ML no disponibles: {e}")
+            logger.warning(f"Módulos ML no disponibles: {e}")
         except Exception as e:
-            print(f"⚠️ Error al obtener datos históricos: {e}")
+            logger.warning(f"Error al obtener datos históricos: {e}")
     
     # ========== FIN INTEGRACIÓN RAG ==========
     
@@ -182,21 +271,8 @@ IMPORTANTE:
 - Menciona específicamente insights de casos históricos en tu análisis."""
     
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(prompt)
-        
-        # Extraer JSON de la respuesta
-        texto_respuesta = response.text.strip()
-        
-        # Limpiar markdown si existe
-        if texto_respuesta.startswith("```json"):
-            texto_respuesta = texto_respuesta[7:]
-        if texto_respuesta.startswith("```"):
-            texto_respuesta = texto_respuesta[3:]
-        if texto_respuesta.endswith("```"):
-            texto_respuesta = texto_respuesta[:-3]
-        
-        analisis = json.loads(texto_respuesta.strip())
+        texto_respuesta = _generate_text(prompt)
+        analisis = _parse_json_response(texto_respuesta)
         
         # Añadir metadatos sobre datos históricos usados
         analisis['_metadata'] = {
@@ -209,7 +285,7 @@ IMPORTANTE:
         return analisis
         
     except Exception as e:
-        print(f"Error en análisis de IA: {e}")
+        logger.error(f"Error en análisis de IA: {e}")
         return {
             "error": str(e),
             "compatibilidad": {"score": 0, "explicacion": "Error al analizar"},
@@ -269,22 +345,12 @@ Genera en formato JSON:
 Responde SOLO con el JSON."""
 
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(prompt)
-        
-        texto_respuesta = response.text.strip()
-        if texto_respuesta.startswith("```json"):
-            texto_respuesta = texto_respuesta[7:]
-        if texto_respuesta.startswith("```"):
-            texto_respuesta = texto_respuesta[3:]
-        if texto_respuesta.endswith("```"):
-            texto_respuesta = texto_respuesta[:-3]
-        
-        guia = json.loads(texto_respuesta.strip())
+        texto_respuesta = _generate_text(prompt)
+        guia = _parse_json_response(texto_respuesta)
         return guia
         
     except Exception as e:
-        print(f"Error al generar guía: {e}")
+        logger.error(f"Error al generar guía: {e}")
         return {
             "error": str(e),
             "checklist_documentos": [],
@@ -331,22 +397,12 @@ Responde en formato JSON:
 Responde SOLO con el JSON."""
 
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(prompt)
-        
-        texto_respuesta = response.text.strip()
-        if texto_respuesta.startswith("```json"):
-            texto_respuesta = texto_respuesta[7:]
-        if texto_respuesta.startswith("```"):
-            texto_respuesta = texto_respuesta[3:]
-        if texto_respuesta.endswith("```"):
-            texto_respuesta = texto_respuesta[:-3]
-        
-        comparacion = json.loads(texto_respuesta.strip())
+        texto_respuesta = _generate_text(prompt)
+        comparacion = _parse_json_response(texto_respuesta)
         return comparacion
         
     except Exception as e:
-        print(f"Error al comparar: {e}")
+        logger.error(f"Error al comparar: {e}")
         return {"error": str(e)}
 
 
@@ -402,19 +458,44 @@ Si es correo, incluye el Asunto.
 Genera SOLO el contenido del borrador."""
 
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        texto_respuesta = _generate_text(prompt)
+        return texto_respuesta.strip()
         
     except Exception as e:
-        print(f"Error al generar borrador: {e}")
+        logger.error(f"Error al generar borrador: {e}")
         return f"Lo siento, hubo un error al generar el borrador: {str(e)}"
 
 
 if __name__ == "__main__":
-    # Prueba básica
-    if GEMINI_API_KEY:
-        print("✅ Gemini AI configurado correctamente")
-        print(f"📝 Usando modelo: {MODEL_NAME}")
-    else:
-        print("❌ GEMINI_API_KEY no encontrada en .env")
+    # Prueba básica - configurar logging para ver output
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
+    
+    logger.info("=" * 60)
+    logger.info("COMPRA AGIL - AI Module Status")
+    logger.info("=" * 60)
+    
+    # Mostrar info del proveedor configurado
+    logger.info(f"Proveedor configurado: {AI_PROVIDER}")
+    
+    try:
+        provider = _get_provider()
+        if hasattr(provider, 'name'):
+            logger.info(f"Proveedor activo: {provider.name} (modelo: {provider.model})")
+            logger.info("Estado: OK")
+        elif isinstance(provider, dict) and provider.get('type') == 'legacy_gemini':
+            logger.info(f"Proveedor activo: Gemini (modo legacy, modelo: {provider['model']})")
+            logger.info("Estado: OK")
+        else:
+            logger.warning("Proveedor no configurado correctamente")
+    except Exception as e:
+        logger.error(f"Error al obtener proveedor: {e}")
+    
+    # Listar proveedores disponibles si ai_providers está disponible
+    if AI_PROVIDERS_AVAILABLE:
+        try:
+            available = get_available_providers()
+            logger.info(f"Proveedores disponibles: {', '.join(available) if available else 'Ninguno'}")
+        except Exception:
+            pass
+    
+    logger.info("=" * 60)

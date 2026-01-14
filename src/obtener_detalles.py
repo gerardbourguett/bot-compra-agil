@@ -5,6 +5,10 @@ pero no tienen detalles completos.
 import api_client
 import database_extended as db
 import time
+import logging
+
+# Logger para este módulo
+logger = logging.getLogger('compra_agil.obtener_detalles')
 
 def obtener_detalles(max_licitaciones=None, pausa_entre_requests=0.5):
     """
@@ -14,7 +18,7 @@ def obtener_detalles(max_licitaciones=None, pausa_entre_requests=0.5):
         max_licitaciones: Número máximo de licitaciones a procesar (None = todas)
         pausa_entre_requests: Segundos de pausa entre cada licitación
     """
-    print("\n🔍 Iniciando obtención de detalles...")
+    logger.info("Iniciando obtención de detalles...")
 
     # Asegurar que la base de datos esté inicializada
     db.iniciar_db_extendida()
@@ -24,16 +28,16 @@ def obtener_detalles(max_licitaciones=None, pausa_entre_requests=0.5):
     codigos = db.obtener_licitaciones_sin_detalle(limite)
     
     if not codigos:
-        print("✅ No hay licitaciones pendientes de procesar")
+        logger.info("No hay licitaciones pendientes de procesar")
         return 0
     
-    print(f"📋 Encontradas {len(codigos)} licitaciones sin detalles")
+    logger.info(f"Encontradas {len(codigos)} licitaciones sin detalles")
     
     procesadas = 0
     errores = 0
     
     for i, codigo in enumerate(codigos, 1):
-        print(f"\n[{i}/{len(codigos)}] Procesando {codigo}...")
+        logger.info(f"[{i}/{len(codigos)}] Procesando {codigo}...")
         
         try:
             # Obtener todos los detalles
@@ -54,50 +58,52 @@ def obtener_detalles(max_licitaciones=None, pausa_entre_requests=0.5):
                 
                 if exito:
                     procesadas += 1
-                    print(f"   ✅ Guardado exitosamente")
                     
                     # Mostrar resumen
                     productos = len(detalle['ficha'].get('productos_solicitados', []))
                     historial_count = len(detalle['historial']) if detalle['historial'] else 0
                     adjuntos_count = len(detalle['adjuntos']) if detalle['adjuntos'] else 0
                     
-                    print(f"      📦 Productos: {productos}")
-                    print(f"      📜 Historial: {historial_count} registros")
-                    print(f"      📎 Adjuntos: {adjuntos_count} archivos")
+                    logger.info(f"  Guardado: {productos} productos, {historial_count} historial, {adjuntos_count} adjuntos")
                 else:
                     errores += 1
-                    print(f"   ❌ Error al guardar")
+                    logger.error(f"  Error al guardar {codigo}")
             else:
                 errores += 1
-                print(f"   ❌ No se pudo obtener la ficha")
+                logger.error(f"  No se pudo obtener la ficha de {codigo}")
             
             # Pausa entre requests
             time.sleep(pausa_entre_requests)
             
         except Exception as e:
             errores += 1
-            print(f"   ❌ Excepción: {e}")
+            logger.error(f"  Excepción procesando {codigo}: {e}")
     
-    print(f"\n{'='*60}")
-    print(f"✅ Proceso de detalles terminado")
-    print(f"{'='*60}")
-    print(f"📊 Procesadas exitosamente: {procesadas}")
-    print(f"❌ Errores: {errores}")
-    print(f"📈 Tasa de éxito: {(procesadas/len(codigos)*100):.1f}%")
+    logger.info("=" * 60)
+    logger.info("Proceso de detalles terminado")
+    logger.info("=" * 60)
+    logger.info(f"Procesadas exitosamente: {procesadas}")
+    logger.info(f"Errores: {errores}")
+    logger.info(f"Tasa de éxito: {(procesadas/len(codigos)*100):.1f}%")
     
     # Registrar timestamp de ejecución
     try:
         import database_bot as db_bot
         from datetime import datetime
         db_bot.update_system_status('last_scrape_details', datetime.now().isoformat())
-        print("🕒 Timestamp actualizado en system_status")
+        logger.info("Timestamp actualizado en system_status")
     except Exception as e:
-        print(f"⚠️ No se pudo actualizar timestamp: {e}")
+        logger.warning(f"No se pudo actualizar timestamp: {e}")
+    
+    return procesadas
     
     return procesadas
 
 
 if __name__ == "__main__":
+    # Configurar logging para ejecución standalone
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
+    
     # Opciones de uso:
     
     # Opción 1: Procesar solo 50 licitaciones (para prueba)

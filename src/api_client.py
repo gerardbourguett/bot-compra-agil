@@ -2,13 +2,24 @@
 Cliente para interactuar con la API de Mercado Público - Compra Ágil
 Incluye funciones para obtener listados, fichas detalladas, historial y adjuntos
 """
+import os
 import time
+import logging
 from datetime import datetime
 from curl_cffi import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Logger para este módulo
+logger = logging.getLogger('compra_agil.api_client')
 
 # Configuración de la API
 API_BASE_URL = "https://api.buscador.mercadopublico.cl/compra-agil"
-API_KEY = "e93089e4-437c-4723-b343-4fa20045e3bc"
+API_KEY = os.getenv('MERCADO_PUBLICO_API_KEY')
+
+if not API_KEY:
+    logger.warning("MERCADO_PUBLICO_API_KEY no configurada - algunas funciones no estarán disponibles")
 
 
 def obtener_headers():

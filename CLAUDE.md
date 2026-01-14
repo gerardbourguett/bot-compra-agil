@@ -29,16 +29,27 @@ python src/scraper.py
 ### Testing
 
 ```bash
-# ML system test suite
+# Run all tests with pytest
+pytest
+
+# Run with coverage report
+pytest --cov=src --cov-report=html
+
+# Run only unit tests (fast, no external deps)
+pytest -m "not integration"
+
+# Run only integration tests (requires DB/Redis)
+pytest -m integration
+
+# Run specific test file
+pytest tests/test_config.py -v
+
+# Run tests matching pattern
+pytest -k "test_rate_limit" -v
+
+# Legacy test scripts (still work)
 python tests/test_ml_system.py
-
-# API tests
 python tests/test_api_v3.py
-
-# Test specific modules
-python src/ml_precio_optimo.py    # Optimal price
-python src/rag_historico.py       # RAG system
-python src/redis_cache.py         # Redis cache
 ```
 
 ### Database

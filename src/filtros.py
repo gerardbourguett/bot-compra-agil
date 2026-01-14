@@ -22,7 +22,7 @@ def buscar_por_palabras_clave(palabras_clave, limite=20):
     cursor = conn.cursor()
     
     # Definir placeholder según DB
-    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
+    placeholder = db_ext.get_placeholder()
     like_op = 'ILIKE' if db_ext.USE_POSTGRES else 'LIKE' # Postgres es case-sensitive con LIKE, usar ILIKE
     
     # Construir query con OR para cada palabra
@@ -90,7 +90,7 @@ def buscar_urgentes(dias=3, limite=20):
     conn = db_ext.get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
+    placeholder = db_ext.get_placeholder()
     
     # Calculamos fechas en Python para evitar problemas de zona horaria en BD
     ahora = datetime.now()
@@ -125,7 +125,7 @@ def buscar_por_monto(monto_min=None, monto_max=None, limite=20):
     conn = db_ext.get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if db_ext.USE_POSTGRES else '?'
+    placeholder = db_ext.get_placeholder()
     
     condiciones = ["id_estado = 2"]
     parametros = []

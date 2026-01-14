@@ -133,7 +133,7 @@ async def ayuda_cotizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = db.get_connection()
     cursor = conn.cursor()
     
-    placeholder = '%s' if db.USE_POSTGRES else '?'
+    placeholder = db.get_placeholder()
     cursor.execute(f'''
         SELECT id, codigo, nombre, monto_disponible, moneda, fecha_cierre
         FROM licitaciones WHERE codigo = {placeholder}
@@ -402,7 +402,7 @@ async def redactar_oferta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Verificar si existe la licitación
     conn = db.get_connection()
     cursor = conn.cursor()
-    placeholder = '%s' if db.USE_POSTGRES else '?'
+    placeholder = db.get_placeholder()
     cursor.execute(f'SELECT nombre FROM licitaciones WHERE codigo = {placeholder}', (codigo,))
     row = cursor.fetchone()
     conn.close()
@@ -444,7 +444,7 @@ async def ejecutar_redaccion(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Obtener datos completos de la licitación
     conn = db.get_connection()
     cursor = conn.cursor()
-    placeholder = '%s' if db.USE_POSTGRES else '?'
+    placeholder = db.get_placeholder()
     
     # Consultar columnas básicas
     cursor.execute(f'''

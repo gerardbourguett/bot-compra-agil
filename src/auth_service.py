@@ -75,7 +75,7 @@ def crear_api_key_para_usuario(user_id: int, nombre: str = "API Key") -> Dict:
     cursor = conn.cursor()
     
     try:
-        placeholder = '%s' if db.USE_POSTGRES else '?'
+        placeholder = db.get_placeholder()
         
         # Crear tabla si no existe
         cursor.execute(f"""
@@ -131,7 +131,7 @@ def validar_api_key(api_key: str) -> Optional[int]:
     cursor = conn.cursor()
     
     try:
-        placeholder = '%s' if db.USE_POSTGRES else '?'
+        placeholder = db.get_placeholder()
         
         cursor.execute(f"""
             SELECT user_id, is_active 
@@ -182,7 +182,7 @@ def revocar_api_key(user_id: int, key_hash: str) -> bool:
     cursor = conn.cursor()
     
     try:
-        placeholder = '%s' if db.USE_POSTGRES else '?'
+        placeholder = db.get_placeholder()
         
         cursor.execute(f"""
             UPDATE api_keys 
@@ -214,7 +214,7 @@ def listar_api_keys(user_id: int) -> list:
     cursor = conn.cursor()
     
     try:
-        placeholder = '%s' if db.USE_POSTGRES else '?'
+        placeholder = db.get_placeholder()
         
         cursor.execute(f"""
             SELECT 
