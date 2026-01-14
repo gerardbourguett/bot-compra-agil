@@ -4,11 +4,15 @@ Detecta automáticamente cuál usar basándose en DATABASE_URL.
 """
 import os
 import json
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
 # Cargar variables de entorno
 load_dotenv()
+
+# Logger para este módulo (hereda config del servicio que lo importe)
+logger = logging.getLogger('compra_agil.database')
 
 # Detectar tipo de base de datos
 DATABASE_URL = os.getenv('DATABASE_URL', '')
@@ -17,11 +21,11 @@ USE_POSTGRES = DATABASE_URL.startswith(('postgresql', 'postgres'))
 if USE_POSTGRES:
     import psycopg2
     from psycopg2.extras import RealDictCursor
-    print("Usando PostgreSQL")
+    logger.info("Base de datos: PostgreSQL")
 else:
     import sqlite3
     DB_NAME = 'compra_agil.db'
-    print("Usando SQLite")
+    logger.info("Base de datos: SQLite")
 
 
 def get_connection():
