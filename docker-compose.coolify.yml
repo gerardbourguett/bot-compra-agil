@@ -1,6 +1,9 @@
 # Docker Compose para Coolify - Servicios Separados
 # PostgreSQL y Redis se configuran directamente en Coolify como Databases
 # Este archivo define solo los servicios de aplicacion
+#
+# IMPORTANTE: Los servicios deben conectarse a la red de Coolify donde estan
+# PostgreSQL y Redis. La red por defecto es 'coolify'.
 
 services:
   # ============================================
@@ -91,3 +94,10 @@ volumes:
     driver: local
   scraper_logs:
     driver: local
+
+# Conectar a la red de Coolify donde estan PostgreSQL y Redis
+# El nombre de la red puede variar - verificar en Coolify UI
+networks:
+  default:
+    name: coolify
+    external: true

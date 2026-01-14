@@ -27,6 +27,9 @@ COPY --chown=appuser:appuser requirements.txt .
 # Instalar dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Instalar gunicorn/uvicorn para API (antes de cambiar a appuser para que quede en PATH global)
+RUN pip install --no-cache-dir gunicorn uvicorn[standard]
+
 # Copiar código de la aplicación
 COPY --chown=appuser:appuser . .
 
@@ -68,8 +71,7 @@ FROM base AS api
 
 WORKDIR /app
 
-# Instalar gunicorn para API
-RUN pip install --no-cache-dir gunicorn uvicorn[standard]
+# gunicorn ya instalado en base
 
 # Health check para API
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
