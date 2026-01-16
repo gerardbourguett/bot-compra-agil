@@ -57,9 +57,13 @@ def buscar_casos_similares(
 
         # Optimización PostgreSQL con pg_trgm
         if db.USE_POSTGRES:
+            # Query optimizada usando índices GIN trigram:
+            # - idx_hist_nombre_trgm para nombre_cotizacion
+            # - idx_hist_producto_trgm para producto_cotizado
+            # - idx_hist_rag_composite para filtros es_ganador, fecha, monto
             query = """
                 SELECT
-                    codigo_licitacion,
+                    codigo_cotizacion,
                     nombre_cotizacion,
                     producto_cotizado,
                     region,

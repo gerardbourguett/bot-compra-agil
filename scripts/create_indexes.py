@@ -113,6 +113,26 @@ def crear_indices_optimizados():
             CREATE INDEX IF NOT EXISTS idx_lic_organismo 
             ON licitaciones(organismo)
         """, "Organismo (agrupamiento)"),
+
+        # GIN Trigram para búsquedas ILIKE en nombre (buscar_por_palabra)
+        ("idx_lic_nombre_trgm", """
+            CREATE INDEX IF NOT EXISTS idx_lic_nombre_trgm
+            ON licitaciones
+            USING gin(nombre gin_trgm_ops)
+        """, "GIN Trigram: nombre licitación (búsqueda fuzzy)"),
+
+        # GIN Trigram para búsquedas ILIKE en organismo
+        ("idx_lic_organismo_trgm", """
+            CREATE INDEX IF NOT EXISTS idx_lic_organismo_trgm
+            ON licitaciones
+            USING gin(organismo gin_trgm_ops)
+        """, "GIN Trigram: organismo (búsqueda fuzzy)"),
+        
+        # ========== HISTORICO: Índice para región ==========
+        ("idx_hist_region", """
+            CREATE INDEX IF NOT EXISTS idx_hist_region
+            ON historico_licitaciones(UPPER(region))
+        """, "Región uppercase (filtros por región)"),
         
         # ========== PRODUCTOS_SOLICITADOS (89K registros) ==========
         ("idx_prod_codigo", """
@@ -123,7 +143,14 @@ def crear_indices_optimizados():
         ("idx_prod_nombre", """
             CREATE INDEX IF NOT EXISTS idx_prod_nombre 
             ON productos_solicitados(LOWER(nombre))
-        """, "Nombre producto (búsqueda)"),
+        """, "Nombre producto (búsqueda legacy)"),
+
+        # GIN Trigram para búsquedas ILIKE en nombre producto
+        ("idx_prod_nombre_trgm", """
+            CREATE INDEX IF NOT EXISTS idx_prod_nombre_trgm
+            ON productos_solicitados
+            USING gin(nombre gin_trgm_ops)
+        """, "GIN Trigram: nombre producto (búsqueda fuzzy)"),
         
         # ========== LICITACIONES_DETALLE (24K registros) ==========
         ("idx_det_estado", """

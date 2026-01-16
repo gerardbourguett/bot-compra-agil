@@ -10,6 +10,7 @@ import sys
 import os
 import math
 import logging
+import time
 import numpy as np
 from datetime import datetime
 from math import ceil
@@ -96,7 +97,6 @@ def raise_safe_error(status_code: int, error: Exception, context: str = "operaci
 
 # ==================== RATE LIMITING ====================
 from collections import defaultdict
-from time import time
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -109,7 +109,7 @@ class InMemoryRateLimiter:
         self.requests = defaultdict(list)
     
     def is_allowed(self, key: str) -> tuple:
-        now = time()
+        now = time.time()
         # Limpiar requests viejos
         self.requests[key] = [t for t in self.requests[key] if now - t < self.window]
         
@@ -240,41 +240,159 @@ async def check_auth_rate_limit(request: Request):
 # ==================== MODELOS PYDANTIC ====================
 
 class PaginatedResponse(BaseModel):
-    success: bool
-    data: List[dict]
-    pagination: dict
+    """Respuesta estándar con paginación"""
+    success: bool = Field(description="Indica si la operación fue exitosa")
+    data: List[dict] = Field(description="Lista de resultados")
+    pagination: dict = Field(description="Información de paginación")
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "success": True,
+                "data": [{"codigo": "1234-56-LP24", "nombre": "Adquisición..."}],
+                "pagination": {"page": 1, "limit": 20, "total": 150, "pages": 8}
+            }
+        }
+    }
 
 class AnalisisConPerfilRequest(BaseModel):
-    """Request para análisis con perfil personalizado"""
+    """Request para análisis de licitación con perfil personalizado de empresa"""
     # Datos del usuario
-    nombre_empresa: str
-    rubro: str
-    historial_adjudicaciones: int
-    dolor_principal: Optional[str] = None
+    nombre_empresa: str = Field(description="Nombre de tu empresa", examples=["TechPyme SpA"])
+    rubro: str = Field(description="Giro comercial", examples=["Tecnología y computación"])
+    historial_adjudicaciones: int = Field(ge=0, description="Número de licitaciones ganadas", examples=[5])
+    dolor_principal: Optional[str] = Field(default=None, description="Principal desafío", examples=["Competir con grandes empresas"])
     
     # Datos de la licitación
-    codigo_licitacion: str
-    titulo: str
-    descripcion: str
-    monto_estimado: int
-    organismo: str
-    region: Optional[str] = None
+    codigo_licitacion: str = Field(description="Código único", examples=["1234-56-LP24"])
+    titulo: str = Field(description="Nombre de la licitación", examples=["Adquisición de notebooks"])
+    descripcion: str = Field(description="Descripción completa", examples=["Se requieren 50 notebooks para funcionarios"])
+    monto_estimado: int = Field(ge=0, description="Presupuesto en CLP", examples=[25000000])
+    organismo: str = Field(description="Organismo comprador", examples=["Municipalidad de Santiago"])
+    region: Optional[str] = Field(default=None, description="Región", examples=["Metropolitana"])
 
-# Modelos existentes de v2
 class PrecioOptimoRequest(BaseModel):
-    producto: str
-    cantidad: int = 1
-    region: Optional[str] = None
-    solo_ganadores: bool = True
+    """Request para calcular precio óptimo con ML"""
+    producto: str = Field(
+        min_length=2,
+        description="Nombre del producto a cotizar",
+        examples=["notebook lenovo thinkpad"]
+    )
+    cantidad: int = Field(
+        default=1, 
+        ge=1,
+        description="Cantidad de unidades",
+        examples=[10]
+    )
+    region: Optional[str] = Field(
+        default=None,
+        description="Filtrar por región específica",
+        examples=["Metropolitana"]
+    )
+    solo_ganadores: bool = Field(
+        default=True,
+        description="Solo considerar ofertas ganadoras para el cálculo",
+        examples=[True]
+    )
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "producto": "notebook lenovo",
+                "cantidad": 10,
+                "region": "Metropolitana",
+                "solo_ganadores": True
+            }
+        }
+    }
 
 # ==================== APP ====================
 
+# Tags para organizar la documentación
+tags_metadata = [
+    {
+        "name": "Sistema",
+        "description": "Endpoints de sistema: health check, info, rate limits",
+    },
+    {
+        "name": "Licitaciones",
+        "description": "Consulta y búsqueda de licitaciones activas del portal Mercado Público",
+    },
+    {
+        "name": "Histórico",
+        "description": "Acceso a 10.6M+ registros históricos de licitaciones para análisis",
+    },
+    {
+        "name": "ML - Machine Learning",
+        "description": "Endpoints de inteligencia artificial: precio óptimo, análisis con IA, predicciones",
+    },
+    {
+        "name": "Autenticación",
+        "description": "Gestión de API keys y autenticación de usuarios",
+    },
+    {
+        "name": "Estadísticas",
+        "description": "Estadísticas agregadas por región, organismo y tendencias",
+    },
+]
+
 app = FastAPI(
-    title="CompraÁgil API v3.0",
-    description="API completa con IA, ML, Redis y cobertura total de BD",
+    title="CompraÁgil API",
+    description="""
+## API de Inteligencia para Licitaciones Públicas de Chile
+
+CompraÁgil es una plataforma que combina **Machine Learning** e **Inteligencia Artificial** 
+para ayudar a PYMEs a ganar licitaciones en el portal Mercado Público.
+
+### Características principales
+
+* **10.6M+ registros históricos** de licitaciones para análisis
+* **Recomendación de precio óptimo** basada en ML
+* **Análisis con IA** (Gemini, OpenAI, Groq, Cerebras)
+* **Búsqueda RAG** semántica en históricos
+* **Cache Redis** para respuestas rápidas
+* **Rate limiting** por IP y tipo de endpoint
+
+### Autenticación
+
+La mayoría de endpoints son públicos. Los endpoints de ML y AI tienen rate limiting.
+Para uso intensivo, genera una API key en `/api/v3/auth/generate-key`.
+
+### Rate Limits
+
+| Tipo | Límite |
+|------|--------|
+| Global | 1000 req/min |
+| ML/AI | 50 req/min |
+| Búsqueda | 200 req/min |
+| Auth | 20 req/min |
+
+### Ejemplos
+
+```python
+import requests
+
+# Buscar licitaciones
+r = requests.get("https://api.compraagil.cl/api/v3/licitaciones/")
+
+# Obtener precio óptimo
+r = requests.post("https://api.compraagil.cl/api/v3/ml/precio", json={
+    "producto": "notebook",
+    "cantidad": 10
+})
+```
+    """,
     version="3.0.0",
     docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    redoc_url="/api/redoc",
+    openapi_tags=tags_metadata,
+    contact={
+        "name": "CompraÁgil Support",
+        "url": "https://github.com/compraagil/bot-compra-agil",
+    },
+    license_info={
+        "name": "MIT",
+    },
 )
 
 app.add_middleware(
@@ -332,8 +450,13 @@ def paginate_query(query: str, page: int, limit: int, count_query: Optional[str]
 
 # ==================== ENDPOINTS BASE ====================
 
-@app.get("/")
+@app.get("/", tags=["Sistema"], summary="Información del API")
 async def root():
+    """
+    Retorna información básica del API y sus capacidades.
+    
+    Útil para verificar que el API está funcionando y conocer las features disponibles.
+    """
     return {
         "app": "CompraÁgil API v3.0",
         "version": "3.0.0",
@@ -343,8 +466,19 @@ async def root():
         "redis_enabled": REDIS_AVAILABLE
     }
 
-@app.get("/health")
+@app.get("/health", tags=["Sistema"], summary="Health check del sistema")
 async def health_check():
+    """
+    Verifica el estado de salud del sistema (liveness probe).
+    
+    Retorna:
+    - Estado de la base de datos
+    - Cantidad de registros históricos
+    - Estado de Redis cache
+    - Timestamp UTC
+    
+    Útil para monitoreo y balanceadores de carga.
+    """
     try:
         conn = db.get_connection()
         cursor = conn.cursor()
@@ -362,19 +496,153 @@ async def health_check():
     except Exception as e:
         raise_safe_error(503, e, "health check")
 
+
+@app.get("/health/ready", tags=["Sistema"], summary="Readiness check")
+async def readiness_check():
+    """
+    Verifica si el sistema está listo para recibir tráfico (readiness probe).
+    
+    Verifica:
+    - Conexión a base de datos
+    - Conexión a Redis (si está configurado)
+    - Tablas necesarias existen
+    
+    Retorna HTTP 200 si está listo, HTTP 503 si no.
+    """
+    checks = {
+        "database": {"status": "unknown", "latency_ms": None},
+        "redis": {"status": "unknown", "latency_ms": None},
+        "tables": {"status": "unknown", "missing": []}
+    }
+    all_ok = True
+    
+    # Check Database
+    try:
+        start = time.time()
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        checks["database"]["latency_ms"] = round((time.time() - start) * 1000, 2)
+        checks["database"]["status"] = "ok"
+        
+        # Check required tables exist
+        required_tables = ["licitaciones", "historico_licitaciones", "productos_solicitados"]
+        missing = []
+        for table in required_tables:
+            try:
+                cursor.execute(f"SELECT 1 FROM {table} LIMIT 1")
+            except Exception:
+                missing.append(table)
+        
+        if missing:
+            checks["tables"]["status"] = "degraded"
+            checks["tables"]["missing"] = missing
+            all_ok = False
+        else:
+            checks["tables"]["status"] = "ok"
+        
+        conn.close()
+    except Exception as e:
+        checks["database"]["status"] = "error"
+        checks["database"]["error"] = str(e)
+        all_ok = False
+    
+    # Check Redis
+    if REDIS_AVAILABLE:
+        try:
+            from redis_cache import redis_client
+            start = time.time()
+            redis_client.ping()
+            checks["redis"]["latency_ms"] = round((time.time() - start) * 1000, 2)
+            checks["redis"]["status"] = "ok"
+        except Exception as e:
+            checks["redis"]["status"] = "error"
+            checks["redis"]["error"] = str(e)
+            # Redis is optional, don't fail readiness
+    else:
+        checks["redis"]["status"] = "disabled"
+    
+    status_code = 200 if all_ok else 503
+    
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "ready": all_ok,
+            "checks": checks,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    )
+
+
+@app.get("/health/live", tags=["Sistema"], summary="Liveness check (simple)")
+async def liveness_check():
+    """
+    Check simple de que el proceso está vivo.
+    
+    No verifica dependencias, solo que el servidor responde.
+    Útil para Kubernetes liveness probes.
+    """
+    return {"alive": True, "timestamp": datetime.utcnow().isoformat()}
+
 # ==================== LICITACIONES ====================
 
-@app.get("/api/v3/licitaciones/")
+@app.get(
+    "/api/v3/licitaciones/",
+    tags=["Licitaciones"],
+    summary="Listar licitaciones activas",
+    response_description="Lista paginada de licitaciones con metadatos de paginación"
+)
 async def listar_licitaciones(
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    estado: Optional[str] = None,
-    organismo: Optional[str] = None,
-    monto_min: Optional[int] = None,
-    monto_max: Optional[int] = None,
-    order_by: str = Query("fecha_cierre", regex="^-?(fecha_cierre|monto_disponible|codigo)$")
+    page: int = Query(1, ge=1, description="Número de página (empieza en 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Resultados por página (máx 100)"),
+    estado: Optional[str] = Query(None, description="Filtrar por estado (ej: 'Publicada', 'Cerrada')"),
+    organismo: Optional[str] = Query(None, description="Buscar por nombre de organismo (parcial, case-insensitive)"),
+    monto_min: Optional[int] = Query(None, ge=0, description="Monto mínimo disponible en CLP"),
+    monto_max: Optional[int] = Query(None, ge=0, description="Monto máximo disponible en CLP"),
+    order_by: str = Query("fecha_cierre", regex="^-?(fecha_cierre|monto_disponible|codigo)$", 
+                          description="Campo para ordenar. Prefijo '-' para descendente")
 ):
-    """Lista licitaciones con filtros y paginación (SQL Injection protected)"""
+    """
+    Lista licitaciones activas del portal Mercado Público con filtros avanzados.
+    
+    ## Filtros disponibles
+    
+    - **estado**: Filtra por estado de la licitación
+    - **organismo**: Búsqueda parcial en nombre del organismo
+    - **monto_min/monto_max**: Rango de montos
+    
+    ## Ordenamiento
+    
+    - `fecha_cierre`: Por fecha de cierre (default)
+    - `monto_disponible`: Por monto
+    - `codigo`: Por código de licitación
+    - Prefijo `-` para orden descendente (ej: `-monto_disponible`)
+    
+    ## Ejemplo de respuesta
+    
+    ```json
+    {
+        "success": true,
+        "data": [
+            {
+                "codigo": "1234-56-LP24",
+                "nombre": "Adquisición de equipos...",
+                "organismo": "Municipalidad de...",
+                "monto_disponible": 5000000,
+                "fecha_cierre": "2024-12-31T23:59:00"
+            }
+        ],
+        "pagination": {
+            "page": 1,
+            "limit": 20,
+            "total": 150,
+            "pages": 8
+        }
+    }
+    ```
+    """
     try:
         placeholder = db.get_placeholder()
         where_clauses = []
@@ -411,9 +679,29 @@ async def listar_licitaciones(
     except Exception as e:
         raise_safe_error(500, e, "listar licitaciones")
 
-@app.get("/api/v3/licitaciones/{codigo}")
-async def obtener_licitacion(codigo: str):
-    """Obtiene detalle completo de licitación con productos e historial"""
+@app.get(
+    "/api/v3/licitaciones/{codigo}",
+    tags=["Licitaciones"],
+    summary="Obtener detalle de licitación",
+    response_description="Licitación completa con productos e historial"
+)
+async def obtener_licitacion(
+    codigo: str = Path(..., description="Código único de la licitación (ej: '1234-56-LP24')")
+):
+    """
+    Obtiene el detalle completo de una licitación específica.
+    
+    Incluye:
+    - Datos básicos de la licitación
+    - Lista de productos solicitados
+    - Historial de cambios (últimos 10)
+    
+    ## Ejemplo
+    
+    ```
+    GET /api/v3/licitaciones/1234-56-LP24
+    ```
+    """
     try:
         conn = db.get_connection()
         cursor = conn.cursor()
@@ -448,24 +736,49 @@ async def obtener_licitacion(codigo: str):
 
 # ==================== HISTÓRICO ====================
 
-@app.get("/api/v3/historico/")
+@app.get(
+    "/api/v3/historico/",
+    tags=["Histórico"],
+    summary="Listar registros históricos",
+    response_description="Lista paginada de licitaciones históricas"
+)
 async def listar_historico(
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    producto: Optional[str] = None,
-    region: Optional[str] = None,
-    solo_ganadores: bool = False
+    page: int = Query(1, ge=1, description="Número de página"),
+    limit: int = Query(20, ge=1, le=100, description="Resultados por página"),
+    producto: Optional[str] = Query(None, description="Buscar por nombre de producto (parcial)"),
+    region: Optional[str] = Query(None, description="Filtrar por región (ej: 'Metropolitana')"),
+    solo_ganadores: bool = Query(False, description="Solo mostrar ofertas ganadoras")
 ):
-    """Lista datos históricos con filtros (SQL Injection protected)"""
+    """
+    Accede a la base de datos histórica con 10.6M+ registros de licitaciones.
+    
+    ## Casos de uso
+    
+    - Analizar precios históricos de un producto
+    - Ver tasas de éxito por región
+    - Estudiar patrones de adjudicación
+    
+    ## Filtros
+    
+    - **producto**: Búsqueda parcial en nombre del producto cotizado
+    - **region**: Filtro exacto por región de Chile
+    - **solo_ganadores**: Solo ofertas que fueron adjudicadas
+    
+    ## Nota de rendimiento
+    
+    Para búsquedas complejas en históricos, usa `/api/v3/historico/buscar` 
+    que utiliza índices optimizados.
+    """
     placeholder = db.get_placeholder()
     where_clauses = []
     params = []
     
     if producto:
-        where_clauses.append(f"LOWER(producto_cotizado) LIKE LOWER({placeholder})")
+        # Usar ILIKE para PostgreSQL (aprovecha índices GIN trigram)
+        where_clauses.append(f"producto_cotizado ILIKE {placeholder}")
         params.append(f"%{producto}%")
     if region:
-        where_clauses.append(f"region = {placeholder}")
+        where_clauses.append(f"UPPER(region) = UPPER({placeholder})")
         params.append(region)
     if solo_ganadores:
         where_clauses.append("es_ganador = TRUE")
@@ -479,21 +792,36 @@ async def listar_historico(
 
 # ==================== PRODUCTOS ====================
 
-@app.get("/api/v3/productos/search")
+@app.get(
+    "/api/v3/productos/search",
+    tags=["Licitaciones"],
+    summary="Buscar productos en licitaciones"
+)
 async def buscar_productos(
-    q: str = Query(..., min_length=3),
-    limit: int = Query(20, ge=1, le=100)
+    q: str = Query(..., min_length=3, description="Término de búsqueda (mín 3 caracteres)"),
+    limit: int = Query(20, ge=1, le=100, description="Máximo de resultados")
 ):
-    """Búsqueda de productos"""
+    """
+    Busca productos solicitados en licitaciones activas.
+    
+    Útil para encontrar licitaciones que solicitan un producto específico.
+    
+    ## Ejemplo
+    
+    ```
+    GET /api/v3/productos/search?q=notebook&limit=10
+    ```
+    """
     try:
         conn = db.get_connection()
         cursor = conn.cursor()
         
+        # Query optimizada con ILIKE para PostgreSQL (case-insensitive, mejor rendimiento)
         cursor.execute("""
             SELECT p.*, l.nombre as nombre_licitacion, l.estado
             FROM productos_solicitados p
             LEFT JOIN licitaciones l ON p.codigo_licitacion = l.codigo
-            WHERE LOWER(p.nombre) LIKE LOWER(%s)
+            WHERE p.nombre ILIKE %s
             ORDER BY l.fecha_cierre DESC
             LIMIT %s
         """, (f"%{q}%", limit))
@@ -535,17 +863,69 @@ async def obtener_perfil(telegram_id: int):
 
 # ==================== ML ENDPOINTS ====================
 
-@app.post("/api/v3/ml/precio")
+@app.post(
+    "/api/v3/ml/precio",
+    tags=["ML - Machine Learning"],
+    summary="Calcular precio óptimo con ML",
+    response_description="Recomendación de precio basada en datos históricos"
+)
 async def calcular_precio_optimo(
     request: PrecioOptimoRequest,
     user_id: Optional[int] = Depends(auth_service.optional_api_key),
     _rate_limit: bool = Depends(check_ml_rate_limit)
 ):
     """
-    Calcula precio óptimo basado en histórico.
+    Calcula el precio óptimo para un producto usando Machine Learning.
     
-    Autenticación opcional con X-API-Key header.
-    Usuarios autenticados tienen mayor límite de requests.
+    ## Algoritmo
+    
+    1. Busca productos similares en 10.6M+ registros históricos
+    2. Filtra por ofertas ganadoras (opcional)
+    3. Aplica análisis estadístico (percentiles, regresión)
+    4. Retorna rango de precios con nivel de confianza
+    
+    ## Autenticación
+    
+    - **Opcional**: Header `X-API-Key: tu_api_key`
+    - Usuarios autenticados tienen mayor límite de requests
+    
+    ## Rate Limit
+    
+    50 requests/minuto por IP
+    
+    ## Ejemplo de request
+    
+    ```json
+    {
+        "producto": "notebook lenovo",
+        "cantidad": 10,
+        "region": "Metropolitana",
+        "solo_ganadores": true
+    }
+    ```
+    
+    ## Ejemplo de response
+    
+    ```json
+    {
+        "success": true,
+        "precio_unitario": {
+            "minimo": 450000,
+            "maximo": 650000,
+            "recomendado": 520000
+        },
+        "precio_total": {
+            "minimo": 4500000,
+            "maximo": 6500000,
+            "recomendado": 5200000
+        },
+        "confianza": 0.85,
+        "estadisticas": {
+            "n_registros": 234,
+            "n_ganadores": 89
+        }
+    }
+    ```
     """
     try:
         resultado = ml_precio_optimo.calcular_precio_optimo(
@@ -559,17 +939,33 @@ async def calcular_precio_optimo(
     except Exception as e:
         raise_safe_error(500, e, "calcular precio óptimo")
 
-@app.post("/api/v3/historico/buscar")
+@app.post(
+    "/api/v3/historico/buscar",
+    tags=["Histórico"],
+    summary="Búsqueda RAG en histórico",
+    response_description="Casos históricos similares encontrados"
+)
 async def buscar_historico(
-    query: str,
-    limite: int = 10,
+    query: str = Query(..., min_length=3, description="Texto de búsqueda (nombre de producto o licitación)"),
+    limite: int = Query(10, ge=1, le=50, description="Máximo de resultados"),
     user_id: Optional[int] = Depends(auth_service.optional_api_key),
     _rate_limit: bool = Depends(check_search_rate_limit)
 ):
     """
-    Búsqueda RAG en histórico.
+    Búsqueda semántica (RAG) en la base de datos histórica.
     
-    Autenticación opcional con X-API-Key header.
+    Usa fuzzy matching y búsqueda por similitud para encontrar
+    licitaciones históricas relevantes.
+    
+    ## Casos de uso
+    
+    - Encontrar licitaciones similares a una actual
+    - Analizar competencia histórica
+    - Estudiar patrones de precios
+    
+    ## Rate Limit
+    
+    200 requests/minuto por IP
     """
     try:
         casos = rag_historico.buscar_casos_similares(
@@ -580,9 +976,21 @@ async def buscar_historico(
     except Exception as e:
         raise_safe_error(500, e, "buscar histórico RAG")
 
-@app.get("/api/v3/stats")
+@app.get(
+    "/api/v3/stats",
+    tags=["Estadísticas"],
+    summary="Estadísticas generales del sistema"
+)
 async def stats_generales():
-    """Estadísticas generales del histórico"""
+    """
+    Retorna estadísticas agregadas de toda la base de datos histórica.
+    
+    Incluye:
+    - Total de registros
+    - Ofertas ganadoras
+    - Tasa de conversión global
+    - Monto promedio
+    """
     try:
         conn = db.get_connection()
         cursor = conn.cursor()
@@ -609,12 +1017,40 @@ async def stats_generales():
 
 # ==================== AI CON PROMPTS DINÁMICOS ====================
 
-@app.post("/api/v3/ai/analizar-con-perfil")
+@app.post(
+    "/api/v3/ai/analizar-con-perfil",
+    tags=["ML - Machine Learning"],
+    summary="Análisis de licitación con IA personalizada",
+    response_description="Análisis completo con prompts adaptados al perfil del usuario"
+)
 async def analizar_con_perfil(request: AnalisisConPerfilRequest):
     """
-    Análisis de licitación con prompt personalizado según perfil
+    Genera un análisis de licitación personalizado usando IA.
     
-    Este endpoint usa prompts dinámicos que se adaptan al nivel de experiencia
+    ## Características
+    
+    - **Prompts dinámicos** que se adaptan al nivel de experiencia
+    - **Tres niveles**: Principiante, Intermedio, Experto
+    - Clasificación automática basada en historial de adjudicaciones
+    
+    ## Niveles de experiencia
+    
+    | Adjudicaciones | Nivel | Enfoque del análisis |
+    |----------------|-------|---------------------|
+    | 0-2 | Principiante | Educativo, paso a paso |
+    | 3-10 | Intermedio | Balanceado, táctico |
+    | 11+ | Experto | Directo, estratégico |
+    
+    ## Campos requeridos
+    
+    - **nombre_empresa**: Nombre de tu empresa
+    - **rubro**: Giro comercial
+    - **historial_adjudicaciones**: Número de licitaciones ganadas
+    - **codigo_licitacion**: Código de la licitación a analizar
+    - **titulo**: Nombre de la licitación
+    - **descripcion**: Descripción completa
+    - **monto_estimado**: Presupuesto en CLP
+    - **organismo**: Organismo comprador
     """
     try:
         # Crear contextos
@@ -656,9 +1092,23 @@ async def analizar_con_perfil(request: AnalisisConPerfilRequest):
 
 # ==================== STATS AVANZADAS ====================
 
-@app.get("/api/v3/stats/region/{region}")
-async def stats_por_region(region: str):
-    """Estadísticas por región"""
+@app.get(
+    "/api/v3/stats/region/{region}",
+    tags=["Estadísticas"],
+    summary="Estadísticas por región"
+)
+async def stats_por_region(
+    region: str = Path(..., description="Nombre de la región (ej: 'Metropolitana', 'Valparaíso')")
+):
+    """
+    Retorna estadísticas agregadas para una región específica de Chile.
+    
+    ## Regiones válidas
+    
+    Arica y Parinacota, Tarapacá, Antofagasta, Atacama, Coquimbo, 
+    Valparaíso, Metropolitana, O'Higgins, Maule, Ñuble, Biobío, 
+    Araucanía, Los Ríos, Los Lagos, Aysén, Magallanes
+    """
     try:
         conn = db.get_connection()
         cursor = conn.cursor()
@@ -691,23 +1141,39 @@ async def stats_por_region(region: str):
 
 # ==================== AUTENTICACIÓN ====================
 
-@app.post("/api/v3/auth/generate-key")
+@app.post(
+    "/api/v3/auth/generate-key",
+    tags=["Autenticación"],
+    summary="Generar nueva API key"
+)
 async def generar_api_key_endpoint(
-    user_id: int,
-    nombre: str = "API Key",
+    user_id: int = Query(..., description="ID del usuario (Telegram ID)"),
+    nombre: str = Query("API Key", description="Nombre descriptivo para la key"),
     _rate_limit: bool = Depends(check_auth_rate_limit)
 ):
     """
     Genera una nueva API key para un usuario.
-    Solo disponible para tier PROFESIONAL.
     
-    ⚠️ La API key se muestra UNA SOLA VEZ. Guárdala de forma segura.
+    ## Requisitos
+    
+    - Solo disponible para usuarios con tier **PROFESIONAL**
+    - Límite: 20 requests/minuto
+    
+    ## Importante
+    
+    La API key se muestra **UNA SOLA VEZ**. Guárdala de forma segura.
+    
+    ## Uso de la API key
+    
+    ```bash
+    curl -H "X-API-Key: tu-api-key" https://api.compraagil.cl/api/v3/ml/precio
+    ```
     """
     try:
         result = auth_service.crear_api_key_para_usuario(user_id, nombre)
         return {
             "success": True,
-            "message": "⚠️ IMPORTANTE: Guarda esta API key. No se volverá a mostrar.",
+            "message": "IMPORTANTE: Guarda esta API key. No se volverá a mostrar.",
             **result
         }
     except HTTPException:
@@ -716,10 +1182,18 @@ async def generar_api_key_endpoint(
         raise_safe_error(500, e, "generar API key")
 
 
-@app.get("/api/v3/auth/keys/{user_id}")
-async def listar_api_keys_endpoint(user_id: int):
+@app.get(
+    "/api/v3/auth/keys/{user_id}",
+    tags=["Autenticación"],
+    summary="Listar API keys de usuario"
+)
+async def listar_api_keys_endpoint(
+    user_id: int = Path(..., description="ID del usuario")
+):
     """
-    Lista todas las API keys de un usuario (sin mostrar las keys completas).
+    Lista todas las API keys de un usuario.
+    
+    Por seguridad, solo muestra los últimos 8 caracteres de cada key.
     """
     try:
         keys = auth_service.listar_api_keys(user_id)
@@ -733,13 +1207,19 @@ async def listar_api_keys_endpoint(user_id: int):
         raise_safe_error(500, e, "listar API keys")
 
 
-@app.delete("/api/v3/auth/keys/{user_id}/{key_hash}")
+@app.delete(
+    "/api/v3/auth/keys/{user_id}/{key_hash}",
+    tags=["Autenticación"],
+    summary="Revocar API key"
+)
 async def revocar_api_key_endpoint(
-    user_id: int,
-    key_hash: str
+    user_id: int = Path(..., description="ID del usuario"),
+    key_hash: str = Path(..., description="Hash de la key a revocar")
 ):
     """
-    Revoca (desactiva) una API key.
+    Revoca (desactiva) una API key permanentemente.
+    
+    Esta acción no se puede deshacer.
     """
     try:
         success = auth_service.revocar_api_key(user_id, key_hash)
@@ -756,11 +1236,22 @@ async def revocar_api_key_endpoint(
         raise_safe_error(500, e, "revocar API key")
 
 
-@app.get("/api/v3/auth/validate")
-async def validar_api_key_endpoint(user_id: int = auth_service.require_api_key):
+@app.get(
+    "/api/v3/auth/validate",
+    tags=["Autenticación"],
+    summary="Validar API key"
+)
+async def validar_api_key_endpoint(user_id: int = Depends(auth_service.require_api_key)):
     """
     Endpoint de prueba para validar que tu API key funciona.
-    Requiere header: X-API-Key: tu-api-key
+    
+    ## Header requerido
+    
+    ```
+    X-API-Key: tu-api-key
+    ```
+    
+    Si la key es válida, retorna información del usuario autenticado.
     """
     return {
         "success": True,
@@ -770,7 +1261,11 @@ async def validar_api_key_endpoint(user_id: int = auth_service.require_api_key):
     }
 
 
-@app.get("/api/v3/rate-limit/status")
+@app.get(
+    "/api/v3/rate-limit/status",
+    tags=["Sistema"],
+    summary="Estado de rate limits"
+)
 async def get_rate_limit_status(request: Request):
     """
     Muestra el estado actual de rate limiting para tu IP.

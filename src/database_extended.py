@@ -1,11 +1,18 @@
 """
 Versión extendida de la base de datos compatible con PostgreSQL y SQLite.
 Detecta automáticamente cuál usar basándose en DATABASE_URL.
+
+Features:
+- Connection pooling para PostgreSQL (reduce latencia)
+- Query logging para monitorear queries lentas
+- Soporte para SQLite como fallback
 """
 import os
 import json
 import logging
+import time
 from datetime import datetime
+from contextlib import contextmanager
 from dotenv import load_dotenv
 
 # Cargar variables de entorno
@@ -14,28 +21,174 @@ load_dotenv()
 # Logger para este módulo (hereda config del servicio que lo importe)
 logger = logging.getLogger('compra_agil.database')
 
+# Configuración de query logging
+SLOW_QUERY_THRESHOLD_MS = float(os.getenv('SLOW_QUERY_THRESHOLD_MS', '100'))  # Log queries > 100ms
+ENABLE_QUERY_LOGGING = os.getenv('ENABLE_QUERY_LOGGING', 'false').lower() == 'true'
+
 # Detectar tipo de base de datos
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 USE_POSTGRES = DATABASE_URL.startswith(('postgresql', 'postgres'))
 
+# Connection pool (solo PostgreSQL)
+_connection_pool = None
+
 if USE_POSTGRES:
     import psycopg2
+    from psycopg2 import pool
     from psycopg2.extras import RealDictCursor
-    logger.info("Base de datos: PostgreSQL")
+    
+    # Configuración del pool
+    POOL_MIN_CONN = int(os.getenv('DB_POOL_MIN_CONN', '2'))
+    POOL_MAX_CONN = int(os.getenv('DB_POOL_MAX_CONN', '10'))
+    
+    try:
+        _connection_pool = pool.ThreadedConnectionPool(
+            POOL_MIN_CONN,
+            POOL_MAX_CONN,
+            DATABASE_URL
+        )
+        logger.info(f"PostgreSQL connection pool initialized (min={POOL_MIN_CONN}, max={POOL_MAX_CONN})")
+    except Exception as e:
+        logger.warning(f"Failed to create connection pool, using direct connections: {e}")
+        _connection_pool = None
 else:
     import sqlite3
     DB_NAME = 'compra_agil.db'
-    logger.info("Base de datos: SQLite")
+    logger.info("Base de datos: SQLite (sin connection pool)")
 
 
 def get_connection():
-    """Obtiene una conexión a la base de datos"""
+    """
+    Obtiene una conexión a la base de datos.
+    
+    Para PostgreSQL: usa connection pool si está disponible.
+    Para SQLite: crea conexión directa.
+    
+    IMPORTANTE: Siempre cerrar la conexión con close() o usar get_connection_context()
+    """
     if USE_POSTGRES:
-        conn = psycopg2.connect(DATABASE_URL)
-        conn.set_client_encoding('UTF8')
-        return conn
+        if _connection_pool:
+            conn = _connection_pool.getconn()
+            conn.set_client_encoding('UTF8')
+            return conn
+        else:
+            # Fallback a conexión directa
+            conn = psycopg2.connect(DATABASE_URL)
+            conn.set_client_encoding('UTF8')
+            return conn
     else:
         return sqlite3.connect(DB_NAME)
+
+
+def release_connection(conn):
+    """
+    Libera una conexión al pool (solo PostgreSQL con pool activo).
+    Para SQLite o sin pool, simplemente cierra la conexión.
+    """
+    if USE_POSTGRES and _connection_pool:
+        try:
+            _connection_pool.putconn(conn)
+        except Exception as e:
+            logger.warning(f"Error releasing connection to pool: {e}")
+            try:
+                conn.close()
+            except:
+                pass
+    else:
+        try:
+            conn.close()
+        except:
+            pass
+
+
+@contextmanager
+def get_connection_context():
+    """
+    Context manager para obtener y liberar conexiones automáticamente.
+    
+    Uso:
+        with get_connection_context() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM tabla")
+            # La conexión se libera automáticamente al salir del bloque
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        yield conn
+    finally:
+        if conn:
+            release_connection(conn)
+
+
+def execute_with_timing(cursor, query, params=None):
+    """
+    Ejecuta una query y registra el tiempo si es lenta.
+    
+    Args:
+        cursor: Cursor de la base de datos
+        query: Query SQL a ejecutar
+        params: Parámetros para la query (opcional)
+    
+    Returns:
+        Tiempo de ejecución en milisegundos
+    """
+    start_time = time.time()
+    
+    if params:
+        cursor.execute(query, params)
+    else:
+        cursor.execute(query)
+    
+    elapsed_ms = (time.time() - start_time) * 1000
+    
+    # Log de queries lentas
+    if elapsed_ms > SLOW_QUERY_THRESHOLD_MS:
+        # Truncar query para el log
+        query_preview = query[:200].replace('\n', ' ').strip()
+        if len(query) > 200:
+            query_preview += '...'
+        logger.warning(f"Slow query ({elapsed_ms:.1f}ms): {query_preview}")
+    elif ENABLE_QUERY_LOGGING:
+        query_preview = query[:100].replace('\n', ' ').strip()
+        logger.debug(f"Query ({elapsed_ms:.1f}ms): {query_preview}")
+    
+    return elapsed_ms
+
+
+def get_pool_stats():
+    """
+    Obtiene estadísticas del connection pool.
+    
+    Returns:
+        Dict con estadísticas o None si no hay pool
+    """
+    if not USE_POSTGRES or not _connection_pool:
+        return None
+    
+    try:
+        # ThreadedConnectionPool no expone stats directamente,
+        # pero podemos obtener info básica
+        return {
+            'pool_type': 'ThreadedConnectionPool',
+            'min_connections': POOL_MIN_CONN,
+            'max_connections': POOL_MAX_CONN,
+            'status': 'active'
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def close_pool():
+    """Cierra el connection pool (llamar al terminar la aplicación)"""
+    global _connection_pool
+    if _connection_pool:
+        try:
+            _connection_pool.closeall()
+            logger.info("Connection pool closed")
+        except Exception as e:
+            logger.error(f"Error closing connection pool: {e}")
+        _connection_pool = None
 
 
 def get_placeholder():
@@ -493,21 +646,24 @@ def obtener_licitaciones_sin_detalle(limite=100):
 def buscar_por_palabra(palabra, limite=10):
     """
     Busca licitaciones por palabra clave.
+    Optimizado para usar índices GIN trigram en PostgreSQL.
     """
     conn = get_connection()
     cursor = conn.cursor()
     
-    patron = f"%{palabra}%"
-    
     if USE_POSTGRES:
+        # Usar ILIKE para case-insensitive (aprovecha índices)
+        # Para búsquedas fuzzy más avanzadas, usar % de pg_trgm
         query = '''
             SELECT codigo, nombre, organismo, fecha_cierre
             FROM licitaciones
-            WHERE LOWER(nombre) LIKE LOWER(%s)
-            OR LOWER(organismo) LIKE LOWER(%s)
+            WHERE nombre ILIKE %s
+            OR organismo ILIKE %s
             ORDER BY fecha_cierre DESC
             LIMIT %s
         '''
+        patron = f"%{palabra}%"
+        cursor.execute(query, (patron, patron, limite))
     else:
         query = '''
             SELECT codigo, nombre, organismo, fecha_cierre
@@ -517,8 +673,8 @@ def buscar_por_palabra(palabra, limite=10):
             ORDER BY fecha_cierre DESC
             LIMIT ?
         '''
-    
-    cursor.execute(query, (patron, patron, limite))
+        patron = f"%{palabra}%"
+        cursor.execute(query, (patron, patron, limite))
     
     resultados = cursor.fetchall()
     conn.close()
