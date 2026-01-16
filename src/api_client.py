@@ -1,6 +1,11 @@
 """
 Cliente para interactuar con la API de Mercado Público - Compra Ágil
 Incluye funciones para obtener listados, fichas detalladas, historial y adjuntos
+
+Features:
+- Circuit breaker para proteger contra sobrecarga de la API
+- Logging de errores y latencia
+- Retry automático con backoff
 """
 import os
 import time
@@ -8,6 +13,15 @@ import logging
 from datetime import datetime
 from curl_cffi import requests
 from dotenv import load_dotenv
+
+# Import circuit breaker
+try:
+    from circuit_breaker import circuit_breaker, CircuitBreakerError
+    CIRCUIT_BREAKER_ENABLED = True
+except ImportError:
+    CIRCUIT_BREAKER_ENABLED = False
+    logger = logging.getLogger('compra_agil.api_client')
+    logger.warning("Circuit breaker module not available")
 
 load_dotenv()
 
@@ -47,6 +61,28 @@ def obtener_headers():
     }
 
 
+def _safe_api_call(func, *args, **kwargs):
+    """
+    Wrapper para llamadas a la API con circuit breaker.
+    
+    Args:
+        func: Función a ejecutar
+        *args, **kwargs: Argumentos para la función
+    
+    Returns:
+        Resultado de la función
+    
+    Raises:
+        CircuitBreakerError: Si el circuit breaker está abierto
+        Exception: Si la llamada falla
+    """
+    if CIRCUIT_BREAKER_ENABLED:
+        from circuit_breaker import mercado_publico_breaker
+        return mercado_publico_breaker.call(func, *args, **kwargs)
+    else:
+        return func(*args, **kwargs)
+
+
 def obtener_licitaciones(date_from, date_to, status=2, page_number=1):
     """
     Obtiene el listado de licitaciones de la API para una página específica.
@@ -60,27 +96,46 @@ def obtener_licitaciones(date_from, date_to, status=2, page_number=1):
     Returns:
         dict: Respuesta JSON de la API o None si hay error
     """
-    params = {
-        "date_from": date_from,
-        "date_to": date_to,
-        "order_by": "recent",
-        "page_number": page_number,
-        "status": status
-    }
+    def _fetch():
+        params = {
+            "date_from": date_from,
+            "date_to": date_to,
+            "order_by": "recent",
+            "page_number": page_number,
+            "status": status
+        }
 
-    headers = obtener_headers()
+        headers = obtener_headers()
 
+        try:
+            start_time = time.time()
+            response = requests.get(
+                API_BASE_URL,
+                params=params,
+                headers=headers,
+                impersonate="chrome120"
+            )
+            response.raise_for_status()
+            
+            elapsed = time.time() - start_time
+            logger.debug(f"API call successful ({elapsed:.2f}s): page {page_number}")
+            
+            return response.json()
+
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error fetching licitaciones page {page_number}: {e}")
+            raise
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error fetching licitaciones page {page_number}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error fetching licitaciones page {page_number}: {e}")
+            raise
+    
+    # Ejecutar con circuit breaker
     try:
-        response = requests.get(
-            API_BASE_URL,
-            params=params,
-            headers=headers,
-            impersonate="chrome120"
-        )
-        response.raise_for_status()
-        return response.json()
-    except Exception as error:
-        print(f"❌ Error al obtener licitaciones (página {page_number}): {error}")
+        return _safe_api_call(_fetch)
+    except Exception:
         return None
 
 

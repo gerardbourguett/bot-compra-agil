@@ -147,10 +147,41 @@ cpu_uso_percent = Gauge(
     'Uso de CPU del proceso'
 )
 
-# PostgreSQL
+# PostgreSQL Connection Pool
+db_pool_size = Gauge(
+    'compra_agil_db_pool_size',
+    'Tamaño del connection pool',
+    ['status']  # 'min', 'max', 'current'
+)
+
+db_pool_connections = Gauge(
+    'compra_agil_db_pool_connections',
+    'Conexiones en el pool por estado',
+    ['state']  # 'available', 'in_use'
+)
+
 db_conexiones_activas = Gauge(
     'compra_agil_db_conexiones_activas',
     'Conexiones activas a PostgreSQL'
+)
+
+# Circuit Breaker
+circuit_breaker_state = Gauge(
+    'compra_agil_circuit_breaker_state',
+    'Estado del circuit breaker (0=closed, 1=open, 2=half_open)',
+    ['service']
+)
+
+circuit_breaker_failures = Counter(
+    'compra_agil_circuit_breaker_failures_total',
+    'Total de fallos detectados por el circuit breaker',
+    ['service']
+)
+
+circuit_breaker_successes = Counter(
+    'compra_agil_circuit_breaker_successes_total',
+    'Total de éxitos después de fallos',
+    ['service']
 )
 
 # Redis

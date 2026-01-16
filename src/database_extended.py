@@ -70,6 +70,16 @@ def get_connection():
         if _connection_pool:
             conn = _connection_pool.getconn()
             conn.set_client_encoding('UTF8')
+            
+            # Actualizar métricas del pool
+            try:
+                from metrics_server import db_pool_connections
+                # Aproximación: no podemos conocer exactamente cuántas están en uso
+                # pero podemos inferir que acabamos de tomar una
+                db_pool_connections.labels(state='in_use').inc()
+            except:
+                pass
+            
             return conn
         else:
             # Fallback a conexión directa
@@ -88,6 +98,14 @@ def release_connection(conn):
     if USE_POSTGRES and _connection_pool:
         try:
             _connection_pool.putconn(conn)
+            
+            # Actualizar métricas del pool
+            try:
+                from metrics_server import db_pool_connections
+                db_pool_connections.labels(state='in_use').dec()
+            except:
+                pass
+                
         except Exception as e:
             logger.warning(f"Error releasing connection to pool: {e}")
             try:
@@ -167,14 +185,23 @@ def get_pool_stats():
         return None
     
     try:
-        # ThreadedConnectionPool no expone stats directamente,
-        # pero podemos obtener info básica
-        return {
+        stats = {
             'pool_type': 'ThreadedConnectionPool',
             'min_connections': POOL_MIN_CONN,
             'max_connections': POOL_MAX_CONN,
             'status': 'active'
         }
+        
+        # Actualizar métricas Prometheus
+        try:
+            from metrics_server import db_pool_size
+            db_pool_size.labels(status='min').set(POOL_MIN_CONN)
+            db_pool_size.labels(status='max').set(POOL_MAX_CONN)
+        except:
+            pass
+        
+        return stats
+        
     except Exception as e:
         return {'error': str(e)}
 
