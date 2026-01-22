@@ -1,0 +1,58 @@
+# Docker Compose para Base de Datos e Infraestructura
+# Uso: docker compose -f docker-compose.db.yml up -d
+#
+# Este archivo permite levantar PostgreSQL y Redis de forma independiente
+# sin necesidad de desplegar la aplicación completa.
+
+services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: compra_agil_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: compra_agil
+      POSTGRES_USER: compra_agil_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compra_agil_user -d compra_agil"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - compra_agil_network
+
+  # Redis para caché
+  redis:
+    image: redis:7-alpine
+    container_name: compra_agil_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - compra_agil_network
+
+volumes:
+  postgres_data:
+    driver: local
+    name: compra_agil_postgres_data
+  redis_data:
+    driver: local
+    name: compra_agil_redis_data
+
+networks:
+  compra_agil_network:
+    name: compra_agil_network

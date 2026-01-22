@@ -23,6 +23,7 @@ import ml_utils
 import reportes
 import metrics_server
 import filtros
+import bot_ui  # NUEVO: Importar módulo de UI
 
 # Importar funciones de las partes del bot
 from bot_inteligente_parte1 import (
@@ -54,8 +55,27 @@ TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # Configurar logging estructurado
+# Configurar logging estructurado
 import logger_config
 logger = logger_config.setup_logging(service='telegram_bot', level=logging.INFO)
+
+# ==================== COMANDOS BÁSICOS ====================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /start - Bienvenida y Menú Principal"""
+    await bot_ui.menu_principal(update, context)
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /ayuda - Centro de Ayuda"""
+    await bot_ui.ayuda_comando(update, context)
+
+async def tutorial_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /tutorial - Inicia tutorial"""
+    await bot_ui.tutorial_comando(update, context)
+
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /menu - Muestra menú principal"""
+    await bot_ui.menu_principal(update, context)
 
 
 def main():
@@ -116,7 +136,12 @@ def main():
     )
     
     # Comandos básicos
+    # application.add_handler(CommandHandler('start', start)) # Reemplazado por nuevo start abajo
     application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('menu', menu_command))
+    application.add_handler(CommandHandler('ayuda', help_command))
+    application.add_handler(CommandHandler('tutorial', tutorial_command))
+    
     application.add_handler(CommandHandler('perfil', ver_perfil))
     application.add_handler(perfil_handler)
     application.add_handler(score_handler)
@@ -333,6 +358,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     
     # Extraer acción y código
+    # Extraer acción y código
+    
+    # NUEVO: Delegar acciones de UI al módulo bot_ui si corresponde
+    if data.startswith('menu_') or data.startswith('help_') or data.startswith('tutorial_'):
+        # Redirecciones especiales desde el menú principal a funciones existentes
+        if data == "menu_buscar":
+            await update.effective_message.reply_text("🔎 Escribe /buscar [lo que buscas] para encontrar licitaciones.")
+            return
+        elif data == "menu_oportunidades":
+            await oportunidades(update, context)
+            return
+        elif data == "menu_urgentes":
+            await urgentes(update, context)
+            return
+        elif data == "menu_guardadas":
+            await mis_guardadas(update, context)
+            return
+        elif data == "menu_perfil":
+            await ver_perfil(update, context)
+            return
+            
+        # Si no es redirección, dejar que bot_ui lo maneje
+        await bot_ui.ui_callback_handler(update, context)
+        return
+
     if data.startswith('feedback_like_'):
         codigo = data.replace('feedback_like_', '')
         db_bot.registrar_feedback(update.effective_user.id, codigo, 1)
