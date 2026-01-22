@@ -18,8 +18,24 @@ jobs:
   import:
     runs-on: ubuntu-latest
     timeout-minutes: 120  # 2 horas máximo
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: changeme123
+          POSTGRES_DB: compra_agil
+          POSTGRES_USER: compra_agil_user
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Usar base de datos del servicio (el secreto apunta a localhost que no existe en GHA)
+      DATABASE_URL: postgresql://compra_agil_user:changeme123@localhost:5433/compra_agil
     steps:
       - name: Checkout
         uses: actions/checkout@v4
